@@ -133,6 +133,17 @@ pub struct Store {
     pub paths: Paths,
 }
 
+/// How to behave when ZCode is running.
+#[derive(Debug, Clone, Copy)]
+pub enum RunningPolicy {
+    /// Never delete while ZCode is running.
+    Refuse,
+    /// Limited mode: only sessions that are idle longer than `idle_minutes`
+    /// and not referenced by enabled automations; root sessions must also be
+    /// archived. Enforced per-plan before anything is touched.
+    Limited { idle_minutes: i64 },
+}
+
 impl Store {
     pub fn new(paths: Paths) -> Self {
         Self { paths }
@@ -171,7 +182,7 @@ impl Store {
         let flags = self.index_flags();
         let mut seen: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
         if let Some(map) = &flags {
-            for (id, (archived, pinned)) in map {
+            for (id, (archived, pinned, _updated)) in map {
                 if let Some(s) = out.iter_mut().find(|s| &s.id == id) {
                     s.archived = *archived;
                     s.pinned = *pinned;
@@ -205,8 +216,10 @@ impl Store {
         Ok(out)
     }
 
-    /// task_id → (archived, pinned) from the tasks index; None when unavailable.
-    fn index_flags(&self) -> Option<HashMap<String, (bool, bool)>> {
+    /// task_id → (archived, pinned, updated_at) from the tasks index; None when unavailable.
+    /// Falls back to a literal 0 for updated_at if that column is absent, so a
+    /// benign drift never disables the archived/pinned flags wholesale.
+    fn index_flags(&self) -> Option<HashMap<String, (bool, bool, i64)>> {
         if !self.paths.tasks_db.is_file() {
             return None;
         }
@@ -214,20 +227,25 @@ impl Store {
         if !crate::util::has_table(&con, "tasks") {
             return None;
         }
-        let mut stmt = con
-            .prepare("SELECT task_id, archived, pinned FROM tasks")
-            .ok()?;
+        let has_updated = crate::util::columns(&con, "tasks").contains("updated_at");
+        let sql = if has_updated {
+            "SELECT task_id, archived, pinned, updated_at FROM tasks"
+        } else {
+            "SELECT task_id, archived, pinned, 0 FROM tasks"
+        };
+        let mut stmt = con.prepare(sql).ok()?;
         let rows = stmt
             .query_map([], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, Option<i64>>(1)?.unwrap_or(0) != 0,
                     r.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0,
+                    r.get::<_, Option<i64>>(3)?.unwrap_or(0),
                 ))
             })
             .ok()?;
         Some(
-            rows.filter_map(|r| r.ok().map(|(id, a, p)| (id, (a, p))))
+            rows.filter_map(|r| r.ok().map(|(id, a, p, u)| (id, (a, p, u))))
                 .collect(),
         )
     }
@@ -467,9 +485,14 @@ impl Store {
     // ---------------- deletion ----------------
 
     pub fn execute_delete(&self, roots: &[String]) -> Result<DeleteResult> {
-        if crate::zcode_running() && !crate::zcode_check_disabled() {
-            return Err(Error::ZcodeRunning);
-        }
+        self.execute_delete_with_policy(roots, RunningPolicy::Refuse)
+    }
+
+    pub fn execute_delete_with_policy(
+        &self,
+        roots: &[String],
+        policy: RunningPolicy,
+    ) -> Result<DeleteResult> {
         let report = compat::check(&self.paths);
         if !report.ok {
             return Err(Error::Compat {
@@ -495,6 +518,19 @@ impl Store {
         let plan = self.plan_delete(roots)?;
         if plan.all_ids.is_empty() {
             return Err(Error::Other("no sessions matched the selection".into()));
+        }
+
+        if crate::zcode_running() {
+            match policy {
+                RunningPolicy::Refuse => return Err(Error::ZcodeRunning),
+                RunningPolicy::Limited { idle_minutes } => {
+                    let violations =
+                        self.limited_violations(&plan.all_ids, &plan.roots, idle_minutes)?;
+                    if !violations.is_empty() {
+                        return Err(Error::Limited { violations });
+                    }
+                }
+            }
         }
 
         // 1. backup (simple copy, timestamped dir)
@@ -567,6 +603,88 @@ impl Store {
                 restore_errors,
             },
         })
+    }
+
+    /// Eligibility when ZCode is running (limited mode):
+    /// - every id in the plan must be idle longer than `idle_minutes`
+    ///   (freshness = max(db session.time_updated, tasks-index updated_at))
+    /// - every id must not be referenced by an enabled automation
+    /// - root sessions must additionally be archived; cascade children are
+    ///   exempt because ZCode does not propagate the archived flag to forks —
+    ///   requiring it would make most archived trees with forks undeletable
+    fn limited_violations(
+        &self,
+        all_ids: &[String],
+        roots: &[String],
+        idle_minutes: i64,
+    ) -> Result<Vec<(String, &'static str)>> {
+        let mut violations = Vec::new();
+
+        let mut updated: HashMap<String, i64> = HashMap::new();
+        if !all_ids.is_empty() {
+            let con = open_ro(&self.paths.db_path)?;
+            let sql = format!(
+                "SELECT id, time_updated FROM session WHERE id IN ({})",
+                qm(all_ids.len())
+            );
+            let mut stmt = con.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(all_ids.iter()), |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                ))
+            })?;
+            for row in rows.flatten() {
+                updated.insert(row.0, row.1);
+            }
+        }
+
+        let idx = self.index_flags();
+
+        let mut auto_refs: HashSet<String> = HashSet::new();
+        if self.paths.tasks_db.is_file() {
+            if let Ok(tcon) = open_ro(&self.paths.tasks_db) {
+                if crate::util::has_table(&tcon, "automations") {
+                    let cols = crate::util::columns(&tcon, "automations");
+                    let sql = if cols.contains("enabled") {
+                        "SELECT target_task_id FROM automations WHERE enabled = 1"
+                    } else {
+                        "SELECT target_task_id FROM automations"
+                    };
+                    if let Ok(mut stmt) = tcon.prepare(sql) {
+                        if let Ok(rows) = stmt.query_map([], |r| r.get::<_, Option<String>>(0)) {
+                            for id in rows.flatten().flatten() {
+                                auto_refs.insert(id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let cutoff = chrono::Utc::now().timestamp_millis() - idle_minutes.saturating_mul(60_000);
+        let roots_set: HashSet<&String> = roots.iter().collect();
+        for id in all_ids {
+            let sess_updated = updated.get(id).copied();
+            let (archived, idx_updated) = idx
+                .as_ref()
+                .and_then(|m| m.get(id))
+                .map(|(a, _p, u)| (*a, Some(*u)))
+                .unwrap_or((false, None));
+            let effective = sess_updated.or(idx_updated).unwrap_or(0);
+            if effective > cutoff {
+                violations.push((id.clone(), "too_recent"));
+                continue;
+            }
+            if auto_refs.contains(id) {
+                violations.push((id.clone(), "automation_ref"));
+                continue;
+            }
+            if roots_set.contains(id) && !archived {
+                violations.push((id.clone(), "not_archived"));
+            }
+        }
+        Ok(violations)
     }
 
     fn integrity_snapshot(&self) -> Vec<DbCheck> {

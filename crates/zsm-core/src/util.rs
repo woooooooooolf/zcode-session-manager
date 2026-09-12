@@ -7,7 +7,10 @@ pub fn open_ro(path: &Path) -> rusqlite::Result<Connection> {
 }
 
 pub fn open_rw(path: &Path) -> rusqlite::Result<Connection> {
-    Connection::open(path)
+    let con = Connection::open(path)?;
+    // wait instead of failing instantly when ZCode holds the write lock briefly
+    let _ = con.busy_timeout(std::time::Duration::from_secs(5));
+    Ok(con)
 }
 
 pub fn existing_tables(con: &Connection) -> HashSet<String> {

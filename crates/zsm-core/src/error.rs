@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("ZCode is running — close it before destructive operations")]
     ZcodeRunning,
+    #[error("limited mode: selected sessions cannot be deleted while ZCode is running")]
+    Limited { violations: Vec<(String, &'static str)> },
     #[error("database format is not compatible")]
     Compat { problems: Vec<String> },
     #[error("database integrity check failed")]

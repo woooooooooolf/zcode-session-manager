@@ -4,7 +4,7 @@ use crate::backup;
 use crate::compat;
 use crate::integrity;
 use crate::paths::Paths;
-use crate::store::Store;
+use crate::store::{RunningPolicy, Store};
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -41,11 +41,12 @@ CREATE TABLE permission (id TEXT PRIMARY KEY, project_id TEXT, data TEXT);
 
 const TI_SCHEMA: &str = "
 CREATE TABLE tasks (task_id TEXT PRIMARY KEY, title TEXT,
-    pinned INTEGER DEFAULT 0, archived INTEGER DEFAULT 0, deleted INTEGER DEFAULT 0);
+    pinned INTEGER DEFAULT 0, archived INTEGER DEFAULT 0, deleted INTEGER DEFAULT 0,
+    updated_at INTEGER DEFAULT 0);
 CREATE TABLE task_group_members (id TEXT PRIMARY KEY, task_id TEXT);
 CREATE TABLE automation_runs (run_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE off_peak_tasks (off_peak_task_id TEXT PRIMARY KEY, session_id TEXT);
-CREATE TABLE automations (automation_id TEXT PRIMARY KEY, target_task_id TEXT);
+CREATE TABLE automations (automation_id TEXT PRIMARY KEY, target_task_id TEXT, enabled INTEGER DEFAULT 1);
 ";
 
 const ROOT: &str = "sess_root0000-0000-0000-000000000001";
@@ -53,15 +54,21 @@ const CHILD: &str = "sess_child000-0000-0000-000000000002";
 const KEEP: &str = "sess_keep0000-0000-0000-000000000003";
 const GHOST: &str = "sess_ghost00-0000-0000-000000000004";
 
+/// The running-override hook is a process-global; tests that set different
+/// values must not run concurrently.
+static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 struct Fixture {
     #[allow(dead_code)]
     root: PathBuf,
     paths: Paths,
     store: Store,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 fn make_fixture() -> Fixture {
-    crate::set_zcode_check_disabled(true);
+    let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    crate::set_zcode_running_override(Some(false));
     let root = temp_dir();
     let cli = root.join("cli");
     std::fs::create_dir_all(cli.join("db")).unwrap();
@@ -105,7 +112,7 @@ fn make_fixture() -> Fixture {
     con.execute_batch(TI_SCHEMA).unwrap();
     for (id, archived) in [(ROOT, 1), (CHILD, 0), (KEEP, 0), (GHOST, 1)] {
         con.execute(
-            "INSERT INTO tasks (task_id, title, archived) VALUES (?1, ?2, ?3)",
+            "INSERT INTO tasks (task_id, title, archived, updated_at) VALUES (?1, ?2, ?3, 1000)",
             rusqlite::params![id, format!("title-{id}"), archived],
         )
         .unwrap();
@@ -129,7 +136,12 @@ fn make_fixture() -> Fixture {
 
     let paths = Paths::from_zcode_dir(&root);
     let store = Store::new(paths.clone());
-    Fixture { root, paths, store }
+    Fixture {
+        root,
+        paths,
+        store,
+        _guard: guard,
+    }
 }
 
 fn count(con: &Connection, sql: &str) -> i64 {
@@ -273,4 +285,148 @@ fn compat_check_passes_on_valid_layout_and_fails_on_drift() {
     let report = compat::check(&Paths::from_zcode_dir(&broken));
     assert!(!report.ok);
     assert!(report.problems.iter().any(|p| p.contains("directory")));
+}
+
+// ---------------- limited mode (delete while ZCode runs) ----------------
+
+#[test]
+fn limited_mode_allows_archived_idle_tree_and_rejects_unarchived_roots() {
+    let fx = make_fixture();
+    crate::set_zcode_running_override(Some(true));
+    // fixture: ROOT archived + old, CHILD (non-archived fork) old, KEEP not archived
+    let policy = RunningPolicy::Limited { idle_minutes: 60 };
+
+    // archived root with its non-archived child: allowed (children exempt)
+    let r = fx
+        .store
+        .execute_delete_with_policy(&[ROOT.to_string()], policy)
+        .unwrap();
+    assert_eq!(r.deleted.iter().find(|c| c.table == "session").unwrap().rows, 2);
+
+    // unarchived root: rejected with reason
+    let err = fx
+        .store
+        .execute_delete_with_policy(&[KEEP.to_string()], policy)
+        .unwrap_err();
+    match err {
+        crate::Error::Limited { violations } => {
+            assert_eq!(violations, vec![(KEEP.to_string(), "not_archived")]);
+        }
+        other => panic!("expected Limited, got {other:?}"),
+    }
+}
+
+#[test]
+fn limited_mode_rejects_recent_and_automation_referenced() {
+    let fx = make_fixture();
+    crate::set_zcode_running_override(Some(true));
+    let policy = RunningPolicy::Limited { idle_minutes: 60 };
+
+    // freshly updated session -> too_recent (archived alone is not enough)
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    con.execute(
+        "UPDATE session SET time_updated = ?1 WHERE id = ?2",
+        rusqlite::params![chrono::Utc::now().timestamp_millis(), ROOT],
+    )
+    .unwrap();
+    con.close().unwrap();
+    let err = fx
+        .store
+        .execute_delete_with_policy(&[ROOT.to_string()], policy)
+        .unwrap_err();
+    match err {
+        crate::Error::Limited { violations } => {
+            assert_eq!(violations, vec![(ROOT.to_string(), "too_recent")]);
+        }
+        other => panic!("expected Limited, got {other:?}"),
+    }
+
+    // make ROOT idle again before probing the automation rule
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    con.execute("UPDATE session SET time_updated = 2000 WHERE id = ?1", [ROOT]).unwrap();
+    con.close().unwrap();
+
+    // enabled automation referencing the root -> automation_ref
+    let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
+    con.execute(
+        "INSERT INTO automations (automation_id, target_task_id) VALUES ('a1', ?1)",
+        [ROOT],
+    )
+    .unwrap();
+    con.close().unwrap();
+    let err = fx
+        .store
+        .execute_delete_with_policy(&[ROOT.to_string()], policy)
+        .unwrap_err();
+    match err {
+        crate::Error::Limited { violations } => {
+            assert_eq!(violations, vec![(ROOT.to_string(), "automation_ref")]);
+        }
+        other => panic!("expected Limited, got {other:?}"),
+    }
+
+    // disabled automation -> no violation, delete proceeds
+    let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
+    con.execute("UPDATE automations SET enabled = 0 WHERE automation_id = 'a1'", []).unwrap();
+    con.close().unwrap();
+    assert!(fx
+        .store
+        .execute_delete_with_policy(&[ROOT.to_string()], policy)
+        .is_ok());
+}
+
+#[test]
+fn limited_mode_threshold_bounds_are_enforced() {
+    let fx = make_fixture();
+    crate::set_zcode_running_override(Some(true));
+    // 30 minutes ago: inside a 60-minute threshold -> too_recent
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    con.execute(
+        "UPDATE session SET time_updated = ?1 WHERE id = ?2",
+        rusqlite::params![chrono::Utc::now().timestamp_millis() - 30 * 60_000, ROOT],
+    )
+    .unwrap();
+    con.close().unwrap();
+    let err = fx
+        .store
+        .execute_delete_with_policy(&[ROOT.to_string()], RunningPolicy::Limited { idle_minutes: 60 })
+        .unwrap_err();
+    match err {
+        crate::Error::Limited { violations } => {
+            assert_eq!(violations, vec![(ROOT.to_string(), "too_recent")]);
+        }
+        other => panic!("expected Limited, got {other:?}"),
+    }
+    // with a 20-minute threshold the same session counts as idle -> passes
+    assert!(fx
+        .store
+        .execute_delete_with_policy(&[ROOT.to_string()], RunningPolicy::Limited { idle_minutes: 20 })
+        .is_ok());
+}
+
+#[test]
+fn refuse_and_full_mode_interplay() {
+    // running + Refuse -> refused
+    let fx = make_fixture();
+    crate::set_zcode_running_override(Some(true));
+    assert!(matches!(
+        fx.store.execute_delete_with_policy(&[GHOST.to_string()], RunningPolicy::Refuse),
+        Err(crate::Error::ZcodeRunning)
+    ));
+    // not running + Refuse -> full delete works
+    crate::set_zcode_running_override(Some(false));
+    assert!(fx
+        .store
+        .execute_delete_with_policy(&[GHOST.to_string()], RunningPolicy::Refuse)
+        .is_ok());
+    // not running + Limited behaves identically (policy only consulted while running)
+    drop(fx); // release TEST_LOCK before the next fixture acquires it
+    let fx2 = make_fixture();
+    assert!(fx2
+        .store
+        .execute_delete_with_policy(
+            &[GHOST.to_string()],
+            RunningPolicy::Limited { idle_minutes: 60 }
+        )
+        .is_ok());
 }
