@@ -52,6 +52,13 @@ cargo build --release -p zsm-gui   # 直接产出 target/release/zsm-gui.exe
 cargo tauri build           # 产出 NSIS 安装包
 ```
 
+**关于前端资源打包**：release 构建时 `ui/`（frontendDist）下的全部文件会在编译期
+压缩嵌入 exe（Tauri v2 codegen 机制），单文件即可分发，无需随身携带静态资源；
+debug 构建则从磁盘读取 `ui/`（改前端即时生效）。已验证：把 release 版 exe 单独拷贝到
+空目录运行，界面（样式/文案/图标/数据）完整无缺；NSIS 安装包约 2.8 MB。
+注意：若在 `ui/` 里新增了被 `index.html` 引用的文件，直接重新构建即可自动包含；
+但若引用了不存在的文件，release 下只会在运行时表现为功能缺失——构建不会报错。
+
 结构：
 
 ```
