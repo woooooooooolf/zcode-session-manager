@@ -1,0 +1,18 @@
+# Rust / Tauri
+/target/
+src-tauri/gen/
+
+# Local outputs
+backups/
+exports/
+__pycache__/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Mobile icon sets (not used for desktop builds)
+src-tauri/icons/android/
+src-tauri/icons/ios/
+app-icon.png
