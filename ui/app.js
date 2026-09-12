@@ -150,9 +150,20 @@ function showTableState(which) {
 
 function fmtDuration(minutes) {
   const m = Number(minutes) || 60;
-  if (m >= 1440 && m % 1440 === 0) return `${m / 1440} ${t("unit.days")}`;
-  if (m >= 60 && m % 60 === 0) return `${m / 60} ${t("unit.hours")}`;
-  return `${m} ${t("unit.minutes")}`;
+  const sp = CURRENT_LANG === "zh" ? "" : " ";
+  const singular = CURRENT_LANG === "en" ? ["unit.minute", "unit.hour", "unit.day"] : null;
+  let value, key;
+  if (m % 1440 === 0) {
+    value = m / 1440;
+    key = singular && value === 1 ? singular[2] : "unit.days";
+  } else if (m % 60 === 0) {
+    value = m / 60;
+    key = singular && value === 1 ? singular[1] : "unit.hours";
+  } else {
+    value = m;
+    key = singular && value === 1 ? singular[0] : "unit.minutes";
+  }
+  return `${value}${sp}${t(key)}`;
 }
 
 /// Compat + integrity gates; ZCode running no longer blocks everything,
@@ -589,7 +600,8 @@ function bindSettings() {
       return;
     }
     try {
-      STATE = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes });
+      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes });
+      STATE.settings = settings;
       renderIdleSetting();
       $("idleMsg").textContent = t("set.limitSaved", { n: fmtDuration(STATE.settings.idleMinutes) });
       renderBanners();

@@ -21,6 +21,9 @@ const I18N = {
     "unit.minutes": "分钟",
     "unit.hours": "小时",
     "unit.days": "天",
+    "unit.minute": "分钟",
+    "unit.hour": "小时",
+    "unit.day": "天",
 
     "search.ph": "搜索标题 / ID / 项目",
     "filter.all": "全部",
@@ -153,6 +156,9 @@ const I18N = {
     "unit.minutes": "minutes",
     "unit.hours": "hours",
     "unit.days": "days",
+    "unit.minute": "minute",
+    "unit.hour": "hour",
+    "unit.day": "day",
 
     "search.ph": "Search title / ID / project",
     "filter.all": "All",
