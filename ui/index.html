@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZCode Session Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="icons/icon.png" alt="" onerror="this.style.display='none'" />
+      <span data-i18n="app.title">ZCode Session Manager</span>
+    </div>
+    <div class="header-controls">
+      <label class="inline-label" for="themeSel" data-i18n="theme.label">Theme</label>
+      <select id="themeSel">
+        <option value="light" data-i18n="theme.light">Light</option>
+        <option value="dark" data-i18n="theme.dark">Dark</option>
+        <option value="hc" data-i18n="theme.hc">High contrast</option>
+      </select>
+      <label class="inline-label" for="langSel" data-i18n="lang.label">Language</label>
+      <select id="langSel">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+      </select>
+      <button id="aboutBtn" class="icon-btn" data-i18n-title="about.title" title="About">ⓘ</button>
+    </div>
+  </header>
+
+  <div id="banners"></div>
+
+  <nav class="tabs">
+    <button id="tab-sessions" class="tab active" data-i18n="tab.sessions">Sessions</button>
+    <button id="tab-settings" class="tab" data-i18n="tab.settings">Settings</button>
+  </nav>
+
+  <main>
+    <section id="view-sessions">
+      <div class="toolbar">
+        <input id="search" type="search" data-i18n-ph="search.ph" placeholder="Search title / ID / project" />
+        <select id="filterSel">
+          <option value="" data-i18n="filter.all">All</option>
+          <option value="archived" data-i18n="filter.archived">Archived</option>
+          <option value="pinned" data-i18n="filter.pinned">Pinned</option>
+        </select>
+        <select id="sortSel">
+          <option value="updated" data-i18n="sort.updated">Sort: updated</option>
+          <option value="created" data-i18n="sort.created">Sort: created</option>
+          <option value="size" data-i18n="sort.size">Sort: size</option>
+          <option value="title" data-i18n="sort.title">Sort: title</option>
+        </select>
+        <button id="refreshBtn" data-i18n-title="btn.refresh" title="Refresh">⟳</button>
+        <span id="selInfo" class="grow"></span>
+        <button id="deleteSelBtn" class="danger" disabled data-i18n="btn.deleteSelected">Delete selected</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="sessTable">
+          <thead>
+            <tr>
+              <th class="col-check"><input type="checkbox" id="checkAll" /></th>
+              <th data-i18n="col.title">Title</th>
+              <th data-i18n="col.project">Project</th>
+              <th data-i18n="col.updated">Updated</th>
+              <th class="num" data-i18n="col.messages">Msgs</th>
+              <th class="num" data-i18n="col.size">Size</th>
+              <th class="col-actions" data-i18n="col.actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="sessBody"></tbody>
+        </table>
+        <div id="emptyState" class="empty" hidden>
+          <p data-i18n="empty.title">No sessions found</p>
+          <p class="muted" data-i18n="empty.sub">Try a different directory in Settings, or clear the filters.</p>
+        </div>
+        <div id="errorState" class="empty" hidden>
+          <p id="errorStateMsg"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-settings" hidden>
+      <h2 data-i18n="set.title">Settings</h2>
+      <div class="panel">
+        <label for="dirInput" data-i18n="set.dirLabel">ZCode data directory</label>
+        <div class="row">
+          <input id="dirInput" type="text" spellcheck="false" />
+          <button id="browseBtn" data-i18n="set.browse">Browse…</button>
+          <button id="detectBtn" data-i18n="set.detect">Auto-detect</button>
+          <button id="saveDirBtn" class="primary" data-i18n="set.save">Save &amp; rescan</button>
+        </div>
+        <p class="muted" data-i18n="set.dirHint">The folder that contains cli\db\db.sqlite and v2\tasks-index.sqlite. Usually C:\Users\&lt;you&gt;\.zcode.</p>
+        <p id="dirMsg" class="msg"></p>
+      </div>
+      <div class="panel">
+        <label data-i18n="set.backups">Backups are stored in:</label>
+        <div class="row">
+          <code id="backupsPath" class="grow"></code>
+          <button id="openBackupsBtn" data-i18n="set.openBackups">Open</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="footerPath" class="muted"></span>
+    <span class="grow"></span>
+    <span id="footerCount"></span>
+  </footer>
+
+  <!-- session detail -->
+  <dialog id="detailDlg" class="modal wide">
+    <div class="modal-head">
+      <h3 id="detailTitle"></h3>
+      <button class="icon-btn close-x" data-close="detailDlg">✕</button>
+    </div>
+    <div id="detailMeta" class="muted small"></div>
+    <div id="detailBody" class="detail-body"></div>
+  </dialog>
+
+  <!-- delete confirmation -->
+  <dialog id="confirmDlg" class="modal">
+    <div class="modal-head">
+      <h3 data-i18n="del.title">Delete sessions</h3>
+      <button class="icon-btn close-x" data-close="confirmDlg">✕</button>
+    </div>
+    <div id="confirmBody"></div>
+    <div class="modal-actions">
+      <button id="confirmCancel" data-i18n="del.cancel">Cancel</button>
+      <button id="confirmGo" class="danger" data-i18n="del.confirm">Delete permanently</button>
+    </div>
+  </dialog>
+
+  <!-- delete result -->
+  <dialog id="resultDlg" class="modal">
+    <div class="modal-head">
+      <h3 id="resultTitle"></h3>
+      <button class="icon-btn close-x" data-close="resultDlg">✕</button>
+    </div>
+    <div id="resultBody"></div>
+    <div class="modal-actions">
+      <button id="resultOpenBackup" hidden data-i18n="res.openBackup">Open backup folder</button>
+      <button id="resultClose" class="primary" data-i18n="res.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- about -->
+  <dialog id="aboutDlg" class="modal">
+    <div class="modal-head">
+      <h3 data-i18n="about.title">About</h3>
+      <button class="icon-btn close-x" data-close="aboutDlg">✕</button>
+    </div>
+    <div id="aboutBody"></div>
+  </dialog>
+
+  <div id="toast" hidden></div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
