@@ -2,6 +2,7 @@
 const I18N = {
   zh: {
     "app.title": "ZCode 会话管理器",
+    "app.windowTitle": "ZCode 会话管理器",
     "theme.label": "主题",
     "theme.light": "浅色",
     "theme.dark": "深色",
@@ -12,10 +13,14 @@ const I18N = {
     "tab.settings": "设置",
 
     "status.zcode": "ZCode 正在运行",
-    "banner.zcode": "检测到 ZCode 正在运行。为避免数据库冲突，请先退出 ZCode 再执行删除操作。",
+    "banner.limited": "ZCode 正在运行：受限模式，仅可删除已归档且闲置超过 {n} 的会话。",
     "banner.compat": "ZCode 数据库格式与本工具的预期不符（可能因客户端更新导致）。所有操作已被禁用。",
     "banner.corrupt": "数据库完整性检查未通过，为保护数据已禁用删除操作。可尝试从备份目录恢复。",
     "banner.indexWarn": "未找到会话索引（v2\\tasks-index.sqlite），归档标记不可用，其余功能不受影响。",
+
+    "unit.minutes": "分钟",
+    "unit.hours": "小时",
+    "unit.days": "天",
 
     "search.ph": "搜索标题 / ID / 项目",
     "filter.all": "全部",
@@ -58,6 +63,7 @@ const I18N = {
 
     "del.title": "删除会话",
     "del.intro": "以下内容将被永久删除：",
+    "del.limitedNote": "ZCode 运行中（受限模式）：不满足条件的会话将在执行时被拒绝。",
     "del.sessions": "会话 {n} 个（含级联子会话 {c} 个、索引残影 {g} 个）",
     "del.rows": "数据库行",
     "del.disk": "磁盘占用",
@@ -85,9 +91,14 @@ const I18N = {
     "set.dirHint": "该目录应包含 cli\\db\\db.sqlite 与 v2\\tasks-index.sqlite，通常是 C:\\Users\\<用户名>\\.zcode。",
     "set.browse": "浏览…",
     "set.detect": "自动定位",
-    "set.save": "保存并重新扫描",
+    "set.save": "保存",
     "set.saved": "已保存。",
     "set.invalid": "该目录看起来不是 ZCode 数据目录（缺少 cli/db/db.sqlite 或 v2/tasks-index.sqlite）。",
+    "set.limitsTitle": "删除安全阈值",
+    "set.limitsHint": "ZCode 运行时仅可删除已归档且闲置超过此时长的会话。范围：1 分钟 ~ 365 天。",
+    "set.limitSaved": "已保存：{n}",
+    "set.limitInvalid": "请输入有效数值。",
+    "set.limitRange": "超出范围（1 分钟 ~ 365 天）。",
     "set.backups": "备份保存于：",
     "set.openBackups": "打开",
 
@@ -102,11 +113,12 @@ const I18N = {
     "about.safetyTitle": "安全规则",
     "about.s1": "删除默认两步确认；先备份（简单拷贝，含时间戳目录名）再删除。",
     "about.s2": "删除完成后自动校验两个数据库的完整性；失败则从刚才的备份自动恢复并提示。",
-    "about.s3": "ZCode 正在运行时拒绝删除与清理操作。",
+    "about.s3": "ZCode 运行时进入受限模式：仅可删除已归档且闲置超过阈值（默认 1 小时，可在设置中调整）的会话。",
     "about.s4": "数据库格式与预期不符时（如客户端更新），提示并禁止操作。",
     "about.close": "关闭",
 
     "err.zcode_running": "ZCode 正在运行，请先退出 ZCode 再重试。",
+    "err.limited_mode": "ZCode 运行中，以下会话不满足受限删除条件：",
     "err.compat": "数据库格式不兼容，操作已被拒绝。",
     "err.corruption": "数据库完整性异常，操作已被拒绝。",
     "err.invalid_dir": "目录不是有效的 ZCode 数据目录。",
@@ -122,6 +134,7 @@ const I18N = {
 
   en: {
     "app.title": "ZCode Session Manager",
+    "app.windowTitle": "ZCode Session Manager",
     "theme.label": "Theme",
     "theme.light": "Light",
     "theme.dark": "Dark",
@@ -132,10 +145,14 @@ const I18N = {
     "tab.settings": "Settings",
 
     "status.zcode": "ZCode is running",
-    "banner.zcode": "ZCode is currently running. Close it before deleting sessions to avoid database conflicts.",
+    "banner.limited": "ZCode is running: limited mode — only archived sessions idle for more than {n} can be deleted.",
     "banner.compat": "The ZCode database format does not match what this tool expects (possibly due to a client update). All operations are disabled.",
     "banner.corrupt": "Database integrity check failed. Deleting is disabled to protect your data. You may restore from the backup directory.",
     "banner.indexWarn": "Session index (v2\\tasks-index.sqlite) not found — archive flags unavailable. Everything else still works.",
+
+    "unit.minutes": "minutes",
+    "unit.hours": "hours",
+    "unit.days": "days",
 
     "search.ph": "Search title / ID / project",
     "filter.all": "All",
@@ -178,6 +195,7 @@ const I18N = {
 
     "del.title": "Delete sessions",
     "del.intro": "The following will be deleted permanently:",
+    "del.limitedNote": "ZCode is running (limited mode): sessions not meeting the criteria will be refused at execution time.",
     "del.sessions": "{n} session(s) — including {c} cascaded children and {g} index ghosts",
     "del.rows": "Database rows",
     "del.disk": "Disk space",
@@ -205,9 +223,14 @@ const I18N = {
     "set.dirHint": "The folder that contains cli\\db\\db.sqlite and v2\\tasks-index.sqlite — usually C:\\Users\\<you>\\.zcode.",
     "set.browse": "Browse…",
     "set.detect": "Auto-detect",
-    "set.save": "Save & rescan",
+    "set.save": "Save",
     "set.saved": "Saved.",
     "set.invalid": "This directory does not look like a ZCode data directory (missing cli/db/db.sqlite or v2/tasks-index.sqlite).",
+    "set.limitsTitle": "Delete safety threshold",
+    "set.limitsHint": "While ZCode is running, only archived sessions idle longer than this can be deleted. Range: 1 minute – 365 days.",
+    "set.limitSaved": "Saved: {n}",
+    "set.limitInvalid": "Enter a valid number.",
+    "set.limitRange": "Out of range (1 minute – 365 days).",
     "set.backups": "Backups are stored in:",
     "set.openBackups": "Open",
 
@@ -222,11 +245,12 @@ const I18N = {
     "about.safetyTitle": "Safety rules",
     "about.s1": "Two-step delete confirmation; a simple-copy backup (timestamped folder) is created before anything is removed.",
     "about.s2": "Both databases are integrity-checked after deletion; on failure everything is restored from the backup and you are notified.",
-    "about.s3": "Deleting is refused while ZCode is running.",
+    "about.s3": "While ZCode runs, a limited mode applies: only archived sessions idle beyond the configured threshold (Settings) can be deleted.",
     "about.s4": "If the database format does not match expectations (e.g. after a client update), operations are blocked with a warning.",
     "about.close": "Close",
 
     "err.zcode_running": "ZCode is running — close it first and retry.",
+    "err.limited_mode": "ZCode is running — these sessions do not meet the limited-mode criteria:",
     "err.compat": "Database format is incompatible — operation refused.",
     "err.corruption": "Database integrity is abnormal — operation refused.",
     "err.invalid_dir": "Not a valid ZCode data directory.",

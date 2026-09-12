@@ -7,26 +7,23 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <img src="icons/icon.png" alt="" onerror="this.style.display='none'" />
-      <span data-i18n="app.title">ZCode Session Manager</span>
-    </div>
-    <div class="header-controls">
-      <label class="inline-label" for="themeSel" data-i18n="theme.label">Theme</label>
-      <select id="themeSel">
-        <option value="light" data-i18n="theme.light">Light</option>
-        <option value="dark" data-i18n="theme.dark">Dark</option>
-        <option value="hc" data-i18n="theme.hc">High contrast</option>
-      </select>
-      <label class="inline-label" for="langSel" data-i18n="lang.label">Language</label>
-      <select id="langSel">
-        <option value="zh">中文</option>
-        <option value="en">English</option>
-      </select>
-      <button id="aboutBtn" class="icon-btn" data-i18n-title="about.title" title="About">ⓘ</button>
-    </div>
-  </header>
+  <nav class="tabs">
+    <button id="tab-sessions" class="tab active" data-i18n="tab.sessions">Sessions</button>
+    <button id="tab-settings" class="tab" data-i18n="tab.settings">Settings</button>
+    <span class="grow"></span>
+    <label class="inline-label" for="themeSel" data-i18n="theme.label">Theme</label>
+    <select id="themeSel">
+      <option value="light" data-i18n="theme.light">Light</option>
+      <option value="dark" data-i18n="theme.dark">Dark</option>
+      <option value="hc" data-i18n="theme.hc">High contrast</option>
+    </select>
+    <label class="inline-label" for="langSel" data-i18n="lang.label">Language</label>
+    <select id="langSel">
+      <option value="zh">中文</option>
+      <option value="en">English</option>
+    </select>
+    <button id="aboutBtn" class="icon-btn" data-i18n-title="about.title" title="About">ⓘ</button>
+  </nav>
 
   <div id="banners"></div>
 
@@ -92,6 +89,20 @@
         </div>
         <p class="muted" data-i18n="set.dirHint">The folder that contains cli\db\db.sqlite and v2\tasks-index.sqlite. Usually C:\Users\&lt;you&gt;\.zcode.</p>
         <p id="dirMsg" class="msg"></p>
+      </div>
+      <div class="panel">
+        <label for="idleValue" data-i18n="set.limitsTitle">Delete safety threshold</label>
+        <div class="row">
+          <input id="idleValue" type="number" min="0" step="any" class="idle-input" />
+          <select id="idleUnit">
+            <option value="1" data-i18n="unit.minutes">minutes</option>
+            <option value="60" data-i18n="unit.hours">hours</option>
+            <option value="1440" data-i18n="unit.days">days</option>
+          </select>
+          <button id="saveIdleBtn" class="primary" data-i18n="set.save">Save</button>
+        </div>
+        <p class="muted" data-i18n="set.limitsHint"></p>
+        <p id="idleMsg" class="msg"></p>
       </div>
       <div class="panel">
         <label data-i18n="set.backups">Backups are stored in:</label>

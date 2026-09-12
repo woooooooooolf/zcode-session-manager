@@ -21,12 +21,15 @@ function invoke(cmd, args) {
 function errText(e) {
   const code = typeof e === "object" && e && e.code ? e.code : "other";
   const known = [
-    "zcode_running", "compat", "corruption", "invalid_dir", "db_not_found",
+    "zcode_running", "limited_mode", "compat", "corruption", "invalid_dir", "db_not_found",
     "detect_failed", "io", "sqlite", "other", "no_dir", "no_backend",
   ];
   const key = known.includes(code) ? `err.${code}` : "err.other";
   const detail = typeof e === "object" && e && e.message ? e.message : String(e);
-  return `${t(key)}\n${detail}`;
+  const problems = typeof e === "object" && e && Array.isArray(e.problems) && e.problems.length
+    ? "\n" + e.problems.join("\n")
+    : "";
+  return `${t(key)}${problems}\n${detail}`;
 }
 
 // ---------- formatting ----------
@@ -65,6 +68,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("langSel").value = CURRENT_LANG;
   applyTheme(STATE && STATE.settings ? STATE.settings.theme : null);
   applyI18n();
+  applyWindowTitle();
   renderAbout();
 
   bindHeader();
@@ -80,15 +84,23 @@ function bindHeader() {
   $("langSel").addEventListener("change", async () => {
     CURRENT_LANG = $("langSel").value;
     applyI18n();
+    applyWindowTitle();
     renderAbout();
     renderTable();
-    await invoke("set_prefs", { language: CURRENT_LANG, theme: null }).catch(() => {});
+    await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null }).catch(() => {});
   });
   $("themeSel").addEventListener("change", async () => {
     document.documentElement.dataset.theme = $("themeSel").value;
-    await invoke("set_prefs", { language: null, theme: $("themeSel").value }).catch(() => {});
+    await invoke("set_prefs", { language: null, theme: $("themeSel").value, idleMinutes: null }).catch(() => {});
   });
   $("aboutBtn").addEventListener("click", () => $("aboutDlg").showModal());
+}
+
+/// Keep the native window title in sync with the UI language.
+function applyWindowTitle() {
+  const title = t("app.windowTitle");
+  document.title = title;
+  invoke("set_window_title", { title }).catch(() => {});
 }
 
 function bindTabs() {
@@ -134,12 +146,30 @@ function showTableState(which) {
   $("errorState").hidden = which !== "error";
 }
 
-// ---------- banners / footer ----------
+// ---------- gating ----------
 
-function deleteAllowed() {
-  if (!STATE || !STATE.compat || !STATE.compat.ok) return false;
-  if (STATE.zcodeRunning) return false;
-  return (STATE.integrity || []).every((d) => d.state === "ok");
+function fmtDuration(minutes) {
+  const m = Number(minutes) || 60;
+  if (m >= 1440 && m % 1440 === 0) return `${m / 1440} ${t("unit.days")}`;
+  if (m >= 60 && m % 60 === 0) return `${m / 60} ${t("unit.hours")}`;
+  return `${m} ${t("unit.minutes")}`;
+}
+
+/// Compat + integrity gates; ZCode running no longer blocks everything,
+/// it only restricts *which* rows are deletable (see rowDeletable).
+function coreOpsAllowed() {
+  return !!(STATE && STATE.compat && STATE.compat.ok &&
+    (STATE.integrity || []).every((d) => d.state === "ok"));
+}
+
+/// Limited mode while ZCode runs: archived + idle beyond the threshold.
+/// The backend enforces this authoritatively (incl. automation references).
+function rowDeletable(s) {
+  if (!coreOpsAllowed()) return false;
+  if (!STATE.zcodeRunning) return true;
+  const idleMin = (STATE.settings && STATE.settings.idleMinutes) || 60;
+  const updated = s.updatedMs || 0;
+  return !!s.archived && Date.now() - updated >= idleMin * 60000;
 }
 
 function renderAll() {
@@ -157,7 +187,9 @@ function renderBanners() {
     box.appendChild(b);
   };
   if (!STATE) return;
-  if (STATE.zcodeRunning) add("warn", t("banner.zcode"));
+  if (STATE.zcodeRunning) {
+    add("warn", t("banner.limited", { n: fmtDuration((STATE.settings && STATE.settings.idleMinutes) || 60) }));
+  }
   if (STATE.compat && !STATE.compat.ok) {
     const b = el("div", "banner error", t("banner.compat"));
     const ul = el("ul", "banner-detail");
@@ -221,7 +253,7 @@ function renderTable() {
   body.textContent = "";
   showTableState(rows.length ? "ok" : "empty");
 
-  const canDelete = deleteAllowed();
+  const canDeleteAll = coreOpsAllowed();
   for (const s of rows) {
     const tr = el("tr");
 
@@ -261,8 +293,14 @@ function renderTable() {
     viewBtn.disabled = !!s.ghost;
     viewBtn.addEventListener("click", () => openDetail(s.id));
     tdAct.appendChild(viewBtn);
+    const deletable = rowDeletable(s);
     const delBtn = el("button", "btn-small danger", t("btn.delete"));
-    delBtn.disabled = !canDelete;
+    delBtn.disabled = !deletable;
+    if (!deletable && canDeleteAll && STATE.zcodeRunning) {
+      delBtn.title = t("banner.limited", {
+        n: fmtDuration((STATE.settings && STATE.settings.idleMinutes) || 60),
+      });
+    }
     delBtn.addEventListener("click", () => openDeleteDialog([s.id]));
     tdAct.appendChild(delBtn);
     tr.appendChild(tdAct);
@@ -276,7 +314,7 @@ function renderTable() {
 function updateSelInfo() {
   const n = SELECTED.size;
   $("selInfo").textContent = n ? t("sel.count", { n }) : "";
-  $("deleteSelBtn").disabled = n === 0 || !deleteAllowed();
+  $("deleteSelBtn").disabled = n === 0 || !coreOpsAllowed();
 }
 
 function bindToolbar() {
@@ -285,7 +323,7 @@ function bindToolbar() {
   $("sortSel").addEventListener("change", renderTable);
   $("refreshBtn").addEventListener("click", refresh);
   $("checkAll").addEventListener("change", () => {
-    const rows = visibleSessions();
+    const rows = visibleSessions().filter((s) => rowDeletable(s));
     if ($("checkAll").checked) rows.forEach((s) => SELECTED.add(s.id));
     else rows.forEach((s) => SELECTED.delete(s.id));
     renderTable();
@@ -367,8 +405,8 @@ async function openDetail(id) {
 // ---------- delete flow ----------
 
 async function openDeleteDialog(ids) {
-  if (!deleteAllowed()) {
-    toast(STATE && STATE.zcodeRunning ? t("banner.zcode") : t("banner.compat"));
+  if (!coreOpsAllowed()) {
+    toast(STATE && STATE.zcodeRunning ? t("banner.limited", { n: fmtDuration(60) }) : t("banner.compat"));
     return;
   }
   let plan;
@@ -413,6 +451,9 @@ async function openDeleteDialog(ids) {
 
   body.appendChild(el("p", "backup-note", t("del.backupNote")));
   body.appendChild(el("p", "backup-path", plan.backupsDir));
+  if (STATE && STATE.zcodeRunning) {
+    body.appendChild(el("p", "backup-note", t("del.limitedNote")));
+  }
 
   $("confirmGo").disabled = false;
   $("confirmGo").textContent = t("del.confirm");
@@ -490,6 +531,17 @@ function renderSettings() {
   if (!STATE) return;
   $("dirInput").value = STATE.settings.zcodeDir || STATE.detectedDefault || "";
   $("backupsPath").textContent = STATE.backupsDir || "-";
+  renderIdleSetting();
+}
+
+/// Threshold display: pick the largest unit that divides the stored minutes
+/// evenly (days → hours → minutes); switching units re-derives the value,
+/// saving converts back to minutes.
+function renderIdleSetting() {
+  const m = (STATE && STATE.settings && STATE.settings.idleMinutes) || 60;
+  const unit = m % 1440 === 0 ? "1440" : m % 60 === 0 ? "60" : "1";
+  $("idleUnit").value = unit;
+  $("idleValue").value = String(m / Number(unit));
 }
 
 function bindSettings() {
@@ -521,6 +573,29 @@ function bindSettings() {
       switchTab("sessions");
     } catch (e) {
       $("dirMsg").textContent = errText(e);
+    }
+  });
+  $("idleUnit").addEventListener("change", renderIdleSetting);
+  $("saveIdleBtn").addEventListener("click", async () => {
+    const factor = Number($("idleUnit").value);
+    const raw = Number($("idleValue").value);
+    if (!Number.isFinite(raw) || raw <= 0) {
+      $("idleMsg").textContent = t("set.limitInvalid");
+      return;
+    }
+    const minutes = Math.round(raw * factor);
+    if (minutes < 1 || minutes > 525600) {
+      $("idleMsg").textContent = t("set.limitRange");
+      return;
+    }
+    try {
+      STATE = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes });
+      renderIdleSetting();
+      $("idleMsg").textContent = t("set.limitSaved", { n: fmtDuration(STATE.settings.idleMinutes) });
+      renderBanners();
+      renderTable();
+    } catch (e) {
+      $("idleMsg").textContent = errText(e);
     }
   });
   $("openBackupsBtn").addEventListener("click", () => {
