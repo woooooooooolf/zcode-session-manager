@@ -5,7 +5,7 @@ mod settings;
 use serde::Serialize;
 use settings::{Settings, SettingsStore};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use zsm_core::{CompatReport, DeletePlan, DeleteResult, Paths, SessionDetail, SessionSummary, Store};
 

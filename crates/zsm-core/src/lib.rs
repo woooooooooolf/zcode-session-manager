@@ -12,6 +12,7 @@ pub mod store;
 mod tests;
 pub mod util;
 
+pub use compat::CompatReport;
 pub use error::{Error, Result};
 pub use paths::Paths;
 pub use store::{DeletePlan, DeleteResult, SessionDetail, SessionSummary, Store};
