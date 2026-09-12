@@ -1,0 +1,14 @@
+[package]
+name = "zsm-core"
+version.workspace = true
+edition.workspace = true
+description = "Core logic for the ZCode session manager: scan, compat check, backup, cascade delete, integrity verify"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+dirs.workspace = true
+chrono.workspace = true
+sysinfo.workspace = true
