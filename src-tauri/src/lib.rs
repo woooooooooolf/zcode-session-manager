@@ -5,7 +5,7 @@ mod settings;
 use serde::Serialize;
 use settings::{Settings, SettingsStore};
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use zsm_core::{CompatReport, DeletePlan, DeleteResult, Paths, SessionDetail, SessionSummary, Store};
 
@@ -66,6 +66,15 @@ impl From<zsm_core::Error> for ApiError {
     fn from(e: zsm_core::Error) -> Self {
         let (code, problems) = match &e {
             zsm_core::Error::ZcodeRunning => ("zcode_running", None),
+            zsm_core::Error::Limited { violations } => (
+                "limited_mode",
+                Some(
+                    violations
+                        .iter()
+                        .map(|(id, reason)| format!("{id}: {reason}"))
+                        .collect(),
+                ),
+            ),
             zsm_core::Error::Compat { problems } => ("compat", Some(problems.clone())),
             zsm_core::Error::Corruption { details } => ("corruption", Some(details.clone())),
             zsm_core::Error::DbNotFound(_) => ("db_not_found", None),
@@ -210,6 +219,7 @@ async fn detect_zcode_dir(mgr: State<'_, AppMgr>) -> Result<AppStateOut, ApiErro
 fn set_prefs(
     language: Option<String>,
     theme: Option<String>,
+    idle_minutes: Option<u32>,
     mgr: State<AppMgr>,
 ) -> Settings {
     mgr.inner.settings.update(|s| {
@@ -219,8 +229,20 @@ fn set_prefs(
         if let Some(t) = theme {
             s.theme = t;
         }
+        if let Some(m) = idle_minutes {
+            s.idle_minutes = m.clamp(crate::settings::IDLE_MIN, crate::settings::IDLE_MAX);
+        }
     });
     mgr.settings()
+}
+
+/// Keep the native window title in sync with the UI language.
+#[tauri::command]
+fn set_window_title(app: AppHandle, title: String) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+    window.set_title(&title).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -265,8 +287,11 @@ async fn delete_plan(ids: Vec<String>, mgr: State<'_, AppMgr>) -> Result<DeleteP
 #[tauri::command]
 async fn delete_execute(ids: Vec<String>, mgr: State<'_, AppMgr>) -> Result<DeleteResult, ApiError> {
     let store = mgr.store()?;
+    // limited mode applies only while ZCode is running (core checks that itself)
+    let idle_minutes = mgr.settings().idle_minutes_clamped();
     tauri::async_runtime::spawn_blocking(move || {
-        store.execute_delete(&ids).map_err(ApiError::from)
+        let policy = zsm_core::RunningPolicy::Limited { idle_minutes };
+        store.execute_delete_with_policy(&ids, policy).map_err(ApiError::from)
     })
     .await
     .map_err(|e| ApiError::simple("join", &e.to_string()))?
@@ -312,6 +337,7 @@ pub fn run() {
             set_zcode_dir,
             detect_zcode_dir,
             set_prefs,
+            set_window_title,
             scan,
             list_sessions,
             session_detail,

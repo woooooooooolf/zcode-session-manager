@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+/// Idle threshold bounds for limited mode: 1 minute .. 365 days (in minutes).
+pub const IDLE_MIN: u32 = 1;
+pub const IDLE_MAX: u32 = 525_600;
+const fn default_idle_minutes() -> u32 {
+    60
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -14,6 +21,9 @@ pub struct Settings {
     pub language: String,
     /// "light" | "dark" | "hc"
     pub theme: String,
+    /// Limited-mode idle threshold, stored canonically in minutes.
+    #[serde(default = "default_idle_minutes")]
+    pub idle_minutes: u32,
 }
 
 impl Default for Settings {
@@ -22,7 +32,14 @@ impl Default for Settings {
             zcode_dir: None,
             language: String::new(), // empty = follow system locale
             theme: String::new(),    // empty = follow system preference
+            idle_minutes: default_idle_minutes(),
         }
+    }
+}
+
+impl Settings {
+    pub fn idle_minutes_clamped(&self) -> i64 {
+        self.idle_minutes.clamp(IDLE_MIN, IDLE_MAX) as i64
     }
 }
 
