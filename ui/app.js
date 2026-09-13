@@ -70,6 +70,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyI18n();
   applyWindowTitle();
   renderAbout();
+  renderHelp();
 
   bindHeader();
   bindTabs();
@@ -86,7 +87,11 @@ function bindHeader() {
     applyI18n();
     applyWindowTitle();
     renderAbout();
+    renderHelp();
     renderTable();
+    // dynamically generated chrome must follow the language too
+    renderBanners();
+    renderFooter();
     await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null }).catch(() => {});
   });
   $("themeSel").addEventListener("change", async () => {
@@ -94,6 +99,7 @@ function bindHeader() {
     await invoke("set_prefs", { language: null, theme: $("themeSel").value, idleMinutes: null }).catch(() => {});
   });
   $("aboutBtn").addEventListener("click", () => $("aboutDlg").showModal());
+  $("helpBtn").addEventListener("click", () => $("helpDlg").showModal());
 }
 
 /// Keep the native window title in sync with the UI language.
@@ -285,10 +291,15 @@ function renderTable() {
     tdTitle.appendChild(el("span", "title-text", title));
     tdTitle.title = s.id;
     const flags = el("span", "flags");
-    if (s.ghost) flags.appendChild(el("span", "badge badge-ghost", "G"));
-    if (s.archived) flags.appendChild(el("span", "badge badge-a", "A"));
-    if (s.pinned) flags.appendChild(el("span", "badge badge-p", "P"));
-    if (s.parentId) flags.appendChild(el("span", "badge badge-c", "c"));
+    const addBadge = (cls, letter, tipKey) => {
+      const b = el("span", `badge ${cls}`, letter);
+      b.title = t(tipKey);
+      flags.appendChild(b);
+    };
+    if (s.ghost) addBadge("badge-ghost", "G", "badge.ghost.tip");
+    if (s.archived) addBadge("badge-a", "A", "badge.archived.tip");
+    if (s.pinned) addBadge("badge-p", "P", "badge.pinned.tip");
+    if (s.parentId) addBadge("badge-c", "c", "badge.child.tip");
     tdTitle.appendChild(flags);
     tr.appendChild(tdTitle);
 
@@ -620,8 +631,10 @@ function bindSettings() {
 function renderAbout() {
   const body = $("aboutBody");
   body.textContent = "";
-  body.appendChild(el("p", "muted small", `v${(STATE && STATE.appVersion) || "0.1.0"}`));
+  body.appendChild(el("p", "", `${t("about.version")}: v${(STATE && STATE.appVersion) || "1.0.0"}`));
   body.appendChild(el("p", "", t("about.p1")));
+  body.appendChild(el("h4", "", t("about.changelogTitle")));
+  body.appendChild(el("p", "small", t("about.changelog100")));
   body.appendChild(el("h4", "", t("about.layoutTitle")));
   const ul = el("ul", "about-list");
   for (const k of ["about.l1", "about.l2", "about.l3", "about.l4", "about.l5"]) {
@@ -634,6 +647,31 @@ function renderAbout() {
     ul2.appendChild(el("li", "", t(k)));
   }
   body.appendChild(ul2);
+  body.appendChild(el("h4", "", t("about.complianceTitle")));
+  body.appendChild(el("p", "small", t("about.compliance")));
+  body.appendChild(el("h4", "", t("about.author")));
+  body.appendChild(el("p", "small", t("about.authorValue")));
+  body.appendChild(el("p", "small muted", t("about.github")));
+}
+
+function renderHelp() {
+  const body = $("helpBody");
+  if (!body) return;
+  body.textContent = "";
+  body.appendChild(el("h4", "", t("help.usageTitle")));
+  const ul = el("ul", "about-list");
+  for (const k of ["help.usage1", "help.usage2", "help.usage3"]) ul.appendChild(el("li", "", t(k)));
+  body.appendChild(ul);
+  body.appendChild(el("h4", "", t("help.badgesTitle")));
+  const ul2 = el("ul", "about-list");
+  for (const k of ["help.badgeA", "help.badgeP", "help.badgeC", "help.badgeG"]) {
+    ul2.appendChild(el("li", "", t(k)));
+  }
+  body.appendChild(ul2);
+  body.appendChild(el("h4", "", t("help.dataTitle")));
+  const ul3 = el("ul", "about-list");
+  for (const k of ["help.data1", "help.data2"]) ul3.appendChild(el("li", "", t(k)));
+  body.appendChild(ul3);
 }
 
 // ---------- misc ----------
