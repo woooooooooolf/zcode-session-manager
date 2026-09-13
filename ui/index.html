@@ -11,17 +11,8 @@
     <button id="tab-sessions" class="tab active" data-i18n="tab.sessions">Sessions</button>
     <button id="tab-settings" class="tab" data-i18n="tab.settings">Settings</button>
     <span class="grow"></span>
-    <label class="inline-label" for="themeSel" data-i18n="theme.label">Theme</label>
-    <select id="themeSel">
-      <option value="light" data-i18n="theme.light">Light</option>
-      <option value="dark" data-i18n="theme.dark">Dark</option>
-      <option value="hc" data-i18n="theme.hc">High contrast</option>
-    </select>
-    <label class="inline-label" for="langSel" data-i18n="lang.label">Language</label>
-    <select id="langSel">
-      <option value="zh">中文</option>
-      <option value="en">English</option>
-    </select>
+    <button id="themeBtn" class="icon-btn" data-i18n-title="theme.label" title="Theme">🎨</button>
+    <button id="langBtn" class="icon-btn" data-i18n-title="lang.label" title="Language">文A</button>
     <button id="helpBtn" class="icon-btn" data-i18n-title="help.title" title="Help">?</button>
     <button id="aboutBtn" class="icon-btn" data-i18n-title="about.title" title="About">ⓘ</button>
   </nav>
@@ -31,18 +22,13 @@
   <main>
     <section id="view-sessions">
       <div class="toolbar">
-        <input id="search" type="search" data-i18n-ph="search.ph" placeholder="Search title / ID / project" />
-        <select id="filterSel">
-          <option value="" data-i18n="filter.all">All</option>
-          <option value="archived" data-i18n="filter.archived">Archived</option>
-          <option value="pinned" data-i18n="filter.pinned">Pinned</option>
-        </select>
-        <select id="sortSel">
-          <option value="updated" data-i18n="sort.updated">Sort: updated</option>
-          <option value="created" data-i18n="sort.created">Sort: created</option>
-          <option value="size" data-i18n="sort.size">Sort: size</option>
-          <option value="title" data-i18n="sort.title">Sort: title</option>
-        </select>
+        <input id="search" type="search" data-i18n-ph="search.ph" autocomplete="off" spellcheck="false" />
+        <div class="dropdown">
+          <button id="filterBtn" class="dropdown-btn">
+            <span data-i18n="filter.label">Filter</span><span id="filterCount"></span><span class="caret">▾</span>
+          </button>
+          <div id="filterMenu" class="menu" hidden></div>
+        </div>
         <button id="refreshBtn" data-i18n-title="btn.refresh" title="Refresh">⟳</button>
         <span id="selInfo" class="grow"></span>
         <button id="deleteSelBtn" class="danger" disabled data-i18n="btn.deleteSelected">Delete selected</button>
@@ -53,11 +39,12 @@
           <thead>
             <tr>
               <th class="col-check"><input type="checkbox" id="checkAll" /></th>
-              <th data-i18n="col.title">Title</th>
-              <th data-i18n="col.project">Project</th>
-              <th data-i18n="col.updated">Updated</th>
-              <th class="num" data-i18n="col.messages">Msgs</th>
-              <th class="num" data-i18n="col.size">Size</th>
+              <th class="sortable" data-sort="title"><span data-i18n="col.title">Title</span><span class="arrow"></span></th>
+              <th data-i18n="col.flags">Badges</th>
+              <th class="sortable" data-sort="project"><span data-i18n="col.project">Project</span><span class="arrow"></span></th>
+              <th class="sortable num" data-sort="updated"><span data-i18n="col.updated">Updated</span><span class="arrow"></span></th>
+              <th class="sortable num" data-sort="messages"><span data-i18n="col.messages">Msgs</span><span class="arrow"></span></th>
+              <th class="sortable num" data-sort="size"><span data-i18n="col.size">Size</span><span class="arrow"></span></th>
               <th class="col-actions" data-i18n="col.actions">Actions</th>
             </tr>
           </thead>
@@ -78,10 +65,10 @@
       <div class="panel">
         <label for="dirInput" data-i18n="set.dirLabel">ZCode data directory</label>
         <div class="row">
-          <input id="dirInput" type="text" spellcheck="false" />
+          <input id="dirInput" type="text" spellcheck="false" autocomplete="off" />
           <button id="browseBtn" data-i18n="set.browse">Browse…</button>
           <button id="detectBtn" data-i18n="set.detect">Auto-detect</button>
-          <button id="saveDirBtn" class="primary" data-i18n="set.save">Save &amp; rescan</button>
+          <button id="saveDirBtn" class="primary" data-i18n="set.save">Save</button>
         </div>
         <p class="muted" data-i18n="set.dirHint">The folder that contains cli\db\db.sqlite and v2\tasks-index.sqlite. Usually C:\Users\&lt;you&gt;\.zcode.</p>
         <p id="dirMsg" class="msg"></p>
@@ -89,7 +76,7 @@
       <div class="panel">
         <label for="idleValue" data-i18n="set.limitsTitle">Delete safety threshold</label>
         <div class="row">
-          <input id="idleValue" type="number" min="0" step="any" class="idle-input" />
+          <input id="idleValue" type="number" min="0" step="any" autocomplete="off" class="idle-input" />
           <select id="idleUnit">
             <option value="1" data-i18n="unit.minutes">minutes</option>
             <option value="60" data-i18n="unit.hours">hours</option>
@@ -152,13 +139,31 @@
     </div>
   </dialog>
 
-  <!-- about -->
-  <dialog id="aboutDlg" class="modal">
+  <!-- about: simple card, details behind entries -->
+  <dialog id="aboutDlg" class="modal narrow">
     <div class="modal-head">
       <h3 data-i18n="about.title">About</h3>
       <button class="icon-btn close-x" data-close="aboutDlg">✕</button>
     </div>
     <div id="aboutBody"></div>
+  </dialog>
+
+  <!-- release notes (parsed from the bundled CHANGELOG.md) -->
+  <dialog id="changelogDlg" class="modal wide">
+    <div class="modal-head">
+      <h3 data-i18n="changelog.title">Release notes</h3>
+      <button class="icon-btn close-x" data-close="changelogDlg">✕</button>
+    </div>
+    <div id="changelogBody" class="detail-body"></div>
+  </dialog>
+
+  <!-- open-source components -->
+  <dialog id="licensesDlg" class="modal wide">
+    <div class="modal-head">
+      <h3 data-i18n="licenses.title">Open-source components</h3>
+      <button class="icon-btn close-x" data-close="licensesDlg">✕</button>
+    </div>
+    <div id="licensesBody" class="detail-body"></div>
   </dialog>
 
   <!-- help -->

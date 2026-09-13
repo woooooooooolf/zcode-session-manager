@@ -3,11 +3,32 @@
 
 const $ = (id) => document.getElementById(id);
 
+// surface unexpected JS errors visibly instead of a silently broken UI
+window.addEventListener("error", (e) => {
+  const t = document.getElementById("toast");
+  if (t) {
+    t.textContent = `JS Error: ${e.message}\n${e.filename}:${e.lineno}:${e.colno}`;
+    t.hidden = false;
+  }
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const t = document.getElementById("toast");
+  if (t) {
+    t.textContent = `Promise Error: ${e.reason && e.reason.message ? e.reason.message : e.reason}`;
+    t.hidden = false;
+  }
+});
+
 let STATE = null; // app_state payload (settings, compat, integrity, zcode_running)
 let SESSIONS = [];
 let SELECTED = new Set();
 let LAST_RESULT = null; // backup dir of the last delete, for "open folder"
 let SCAN_ERROR = null;
+let FILTER = new Set(); // categories: active/archived/pinned/child/ghost (empty = all)
+let SORT = { key: "updated", dir: "desc" };
+const DEFAULT_DIR = { title: "asc", project: "asc", updated: "desc", messages: "desc", size: "desc" };
+
+const GITHUB_URL = "https://github.com/woooooooooolf/zcode-session-manager";
 
 // ---------- invoke helpers ----------
 
@@ -48,6 +69,24 @@ function fmtTime(ms) {
   return new Date(ms).toLocaleString();
 }
 
+function fmtDuration(minutes) {
+  const m = Number(minutes) || 60;
+  const sp = CURRENT_LANG === "zh" ? "" : " ";
+  const singular = CURRENT_LANG === "en" ? ["unit.minute", "unit.hour", "unit.day"] : null;
+  let value, key;
+  if (m % 1440 === 0) {
+    value = m / 1440;
+    key = singular && value === 1 ? singular[2] : "unit.days";
+  } else if (m % 60 === 0) {
+    value = m / 60;
+    key = singular && value === 1 ? singular[1] : "unit.hours";
+  } else {
+    value = m;
+    key = singular && value === 1 ? singular[0] : "unit.minutes";
+  }
+  return `${value}${sp}${t(key)}`;
+}
+
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -65,41 +104,99 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.error(e);
   }
   CURRENT_LANG = detectLang(STATE && STATE.settings ? STATE.settings.language : null);
-  $("langSel").value = CURRENT_LANG;
   applyTheme(STATE && STATE.settings ? STATE.settings.theme : null);
   applyI18n();
   applyWindowTitle();
   renderAbout();
   renderHelp();
+  renderFilterMenu();
 
   bindHeader();
   bindTabs();
   bindToolbar();
+  bindSortHeaders();
   bindSettings();
   bindDialogs();
+  startPolling();
 
   await refresh();
 });
 
+// ---------- popovers ----------
+
+function closePopovers() {
+  document.querySelectorAll(".menu").forEach((m) => (m.hidden = true));
+}
+
+function togglePopover(menu, anchor) {
+  const wasHidden = menu.hidden;
+  closePopovers();
+  if (!wasHidden) return;
+  menu.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  menu.style.top = `${Math.round(r.bottom + 4)}px`;
+  const width = Math.min(280, menu.offsetWidth || 220);
+  menu.style.left = `${Math.max(8, Math.round(Math.min(r.left, window.innerWidth - width - 8)))}px`;
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".menu") || e.target.closest("#filterBtn") || e.target.closest("#themeBtn")) return;
+  closePopovers();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closePopovers();
+});
+
 function bindHeader() {
-  $("langSel").addEventListener("change", async () => {
-    CURRENT_LANG = $("langSel").value;
-    applyI18n();
-    applyWindowTitle();
-    renderAbout();
-    renderHelp();
-    renderTable();
-    // dynamically generated chrome must follow the language too
-    renderBanners();
-    renderFooter();
-    await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null }).catch(() => {});
+  // language: two options only, so the button simply toggles
+  $("langBtn").addEventListener("click", () => switchLang(CURRENT_LANG === "zh" ? "en" : "zh"));
+
+  const themeMenu = el("div", "menu");
+  themeMenu.id = "themeMenu";
+  themeMenu.hidden = true;
+  document.body.appendChild(themeMenu);
+  themeMenu.addEventListener("click", (e) => e.stopPropagation());
+  $("themeBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    renderThemeMenu(themeMenu);
+    togglePopover(themeMenu, $("themeBtn"));
   });
-  $("themeSel").addEventListener("change", async () => {
-    document.documentElement.dataset.theme = $("themeSel").value;
-    await invoke("set_prefs", { language: null, theme: $("themeSel").value, idleMinutes: null }).catch(() => {});
-  });
-  $("aboutBtn").addEventListener("click", () => $("aboutDlg").showModal());
+
   $("helpBtn").addEventListener("click", () => $("helpDlg").showModal());
+  $("aboutBtn").addEventListener("click", () => $("aboutDlg").showModal());
+}
+
+function renderThemeMenu(menu) {
+  menu.textContent = "";
+  for (const value of ["light", "dark", "hc"]) {
+    const item = el("button", "menu-item", "");
+    const label = el("span", "", t(`theme.${value}`));
+    item.appendChild(label);
+    if (document.documentElement.dataset.theme === value) {
+      item.appendChild(el("span", "menu-check", "✓"));
+    }
+    item.addEventListener("click", () => {
+      document.documentElement.dataset.theme = value;
+      invoke("set_prefs", { language: null, theme: value, idleMinutes: null }).catch(() => {});
+      closePopovers();
+      renderThemeMenu(menu);
+    });
+    menu.appendChild(item);
+  }
+}
+
+async function switchLang(lang) {
+  CURRENT_LANG = lang;
+  applyI18n();
+  applyWindowTitle();
+  renderAbout();
+  renderHelp();
+  renderFilterMenu();
+  renderTable();
+  // dynamically generated chrome must follow the language too
+  renderBanners();
+  renderFooter();
+  await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null }).catch(() => {});
 }
 
 /// Keep the native window title in sync with the UI language.
@@ -108,6 +205,27 @@ function applyWindowTitle() {
   document.title = title;
   invoke("set_window_title", { title }).catch(() => {});
 }
+
+// ---------- live ZCode state ----------
+
+function startPolling() {
+  // the authoritative guard lives in delete_execute; this keeps the UI honest
+  setInterval(async () => {
+    if (!STATE) return;
+    try {
+      const running = await invoke("is_zcode_running");
+      if (running !== STATE.zcodeRunning) {
+        STATE.zcodeRunning = running;
+        renderBanners();
+        renderTable();
+      }
+    } catch {
+      /* transient probe failure — keep previous state */
+    }
+  }, 4000);
+}
+
+// ---------- tabs ----------
 
 function bindTabs() {
   $("tab-sessions").addEventListener("click", () => switchTab("sessions"));
@@ -134,7 +252,7 @@ async function refresh() {
     STATE = state;
     SESSIONS = sessions;
     SELECTED.clear();
-    $("langSel").value = CURRENT_LANG;
+    $("langBtn").title = t("lang.label");
     renderAll();
   } catch (e) {
     SCAN_ERROR = e;
@@ -154,26 +272,6 @@ function showTableState(which) {
 
 // ---------- gating ----------
 
-function fmtDuration(minutes) {
-  const m = Number(minutes) || 60;
-  const sp = CURRENT_LANG === "zh" ? "" : " ";
-  const singular = CURRENT_LANG === "en" ? ["unit.minute", "unit.hour", "unit.day"] : null;
-  let value, key;
-  if (m % 1440 === 0) {
-    value = m / 1440;
-    key = singular && value === 1 ? singular[2] : "unit.days";
-  } else if (m % 60 === 0) {
-    value = m / 60;
-    key = singular && value === 1 ? singular[1] : "unit.hours";
-  } else {
-    value = m;
-    key = singular && value === 1 ? singular[0] : "unit.minutes";
-  }
-  return `${value}${sp}${t(key)}`;
-}
-
-/// Compat + integrity gates; ZCode running no longer blocks everything,
-/// it only restricts *which* rows are deletable (see rowDeletable).
 function coreOpsAllowed() {
   return !!(STATE && STATE.compat && STATE.compat.ok &&
     (STATE.integrity || []).every((d) => d.state === "ok"));
@@ -195,6 +293,8 @@ function renderAll() {
   renderFooter();
   renderSettings();
 }
+
+// ---------- banners / footer ----------
 
 function renderBanners() {
   const box = $("banners");
@@ -232,33 +332,125 @@ function renderFooter() {
   $("footerCount").textContent = STATE ? t("footer.sessions", { n: SESSIONS.length }) : "";
 }
 
-// ---------- table ----------
+// ---------- filter / sort ----------
 
+function matchFilter(s) {
+  if (!FILTER.size) return true; // nothing selected = show everything
+  if (FILTER.has("active") && !s.archived) return true;
+  if (FILTER.has("archived") && s.archived) return true;
+  if (FILTER.has("pinned") && s.pinned) return true;
+  if (FILTER.has("child") && s.parentId) return true;
+  if (FILTER.has("ghost") && s.ghost) return true;
+  return false;
+}
+
+function renderFilterMenu() {
+  const menu = $("filterMenu");
+  if (!menu) return;
+  menu.textContent = "";
+  for (const cat of ["active", "archived", "pinned", "child", "ghost"]) {
+    const item = el("label", "menu-item check-item");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = FILTER.has(cat);
+    cb.addEventListener("change", () => {
+      if (cb.checked) FILTER.add(cat);
+      else FILTER.delete(cat);
+      $("filterCount").textContent = FILTER.size ? ` (${FILTER.size})` : "";
+      renderTable();
+    });
+    item.appendChild(cb);
+    item.appendChild(el("span", "", t(`cat.${cat}`)));
+    menu.appendChild(item);
+  }
+  menu.appendChild(el("div", "menu-sep"));
+  const clear = el("button", "menu-item", t("filter.clear"));
+  clear.addEventListener("click", () => {
+    FILTER.clear();
+    $("filterCount").textContent = "";
+    renderFilterMenu();
+    renderTable();
+  });
+  menu.appendChild(clear);
+}
+
+function sortKeyFn() {
+  const key = SORT.key;
+  return (s) => {
+    switch (key) {
+      case "title": return (s.title || "").toLowerCase();
+      case "project": return (s.project || "").toLowerCase();
+      case "messages": return s.messageCount === null || s.messageCount === undefined ? -1 : s.messageCount;
+      case "size": return s.diskBytes;
+      default: return s.updatedMs;
+    }
+  };
+}
+
+function bindSortHeaders() {
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    th.addEventListener("click", () => {
+      const k = th.dataset.sort;
+      if (SORT.key === k) SORT.dir = SORT.dir === "asc" ? "desc" : "asc";
+      else SORT = { key: k, dir: DEFAULT_DIR[k] || "desc" };
+      updateSortHeaders();
+      renderTable();
+    });
+  });
+  updateSortHeaders();
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    const arrow = th.querySelector(".arrow");
+    if (!arrow) return;
+    arrow.textContent = th.dataset.sort === SORT.key ? (SORT.dir === "asc" ? "▲" : "▼") : "";
+  });
+}
+
+/// Filtered by search + categories, then ordered as a tree: children follow
+/// their parent (indented); roots and siblings follow the active sort.
 function visibleSessions() {
   const q = $("search").value.trim().toLowerCase();
-  const filter = $("filterSel").value;
-  const sort = $("sortSel").value;
   let rows = SESSIONS.slice();
-  if (q) {
-    rows = rows.filter(
-      (s) =>
-        (s.title || "").toLowerCase().includes(q) ||
-        s.id.toLowerCase().includes(q) ||
-        (s.project || "").toLowerCase().includes(q)
-    );
+  if (q) rows = rows.filter((s) => (s.title || "").toLowerCase().includes(q));
+  rows = rows.filter(matchFilter);
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const kids = new Map();
+  const roots = [];
+  for (const r of rows) {
+    const pid = r.parentId && byId.has(r.parentId) ? r.parentId : null;
+    if (pid) {
+      if (!kids.has(pid)) kids.set(pid, []);
+      kids.get(pid).push(r);
+    } else {
+      roots.push(r);
+    }
   }
-  if (filter === "archived") rows = rows.filter((s) => s.archived);
-  if (filter === "pinned") rows = rows.filter((s) => s.pinned);
-  const key = {
-    updated: (s) => s.updatedMs,
-    created: (s) => s.createdMs,
-    size: (s) => s.diskBytes,
-    title: (s) => (s.title || s.id).toLowerCase(),
-  }[sort];
-  if (sort === "title") rows.sort((a, b) => key(a).localeCompare(key(b)));
-  else rows.sort((a, b) => key(b) - key(a));
-  return rows;
+  const key = sortKeyFn();
+  const cmp = (a, b) => {
+    const ka = key(a); const kb = key(b);
+    const c = ka < kb ? -1 : ka > kb ? 1 : 0;
+    return SORT.dir === "asc" ? c || a.id.localeCompare(b.id) : -c || a.id.localeCompare(b.id);
+  };
+  roots.sort(cmp);
+  for (const arr of kids.values()) arr.sort(cmp);
+
+  const out = [];
+  const walk = (list, depth) => {
+    for (const r of list) {
+      r._depth = depth;
+      out.push(r);
+      const k = kids.get(r.id);
+      if (k && k.length) walk(k, depth + 1);
+    }
+  };
+  walk(roots, 0);
+  return out;
 }
+
+// ---------- table ----------
 
 function renderTable() {
   if (SCAN_ERROR) {
@@ -270,7 +462,6 @@ function renderTable() {
   body.textContent = "";
   showTableState(rows.length ? "ok" : "empty");
 
-  const canDeleteAll = coreOpsAllowed();
   for (const s of rows) {
     const tr = el("tr");
 
@@ -287,21 +478,20 @@ function renderTable() {
     tr.appendChild(tdCheck);
 
     const tdTitle = el("td", "cell-title");
-    const title = s.ghost ? t("badge.ghost") : s.title || s.id;
-    tdTitle.appendChild(el("span", "title-text", title));
+    tdTitle.style.paddingLeft = `${10 + (s._depth || 0) * 20}px`;
+    if (s._depth > 0) tdTitle.appendChild(el("span", "tree-line", "└ "));
+    tdTitle.appendChild(el("span", "title-text", s.ghost ? t("badge.ghost") : s.title || s.id));
     tdTitle.title = s.id;
-    const flags = el("span", "flags");
-    const addBadge = (cls, letter, tipKey) => {
-      const b = el("span", `badge ${cls}`, letter);
-      b.title = t(tipKey);
-      flags.appendChild(b);
-    };
-    if (s.ghost) addBadge("badge-ghost", "G", "badge.ghost.tip");
-    if (s.archived) addBadge("badge-a", "A", "badge.archived.tip");
-    if (s.pinned) addBadge("badge-p", "P", "badge.pinned.tip");
-    if (s.parentId) addBadge("badge-c", "c", "badge.child.tip");
-    tdTitle.appendChild(flags);
     tr.appendChild(tdTitle);
+
+    const tdFlags = el("td", "cell-flags");
+    const chip = (cls, key) => tdFlags.appendChild(el("span", `badge ${cls}`, t(key)));
+    if (s.ghost) chip("badge-ghost", "chip.ghost");
+    if (s.archived) chip("badge-a", "chip.archived");
+    if (s.pinned) chip("badge-p", "chip.pinned");
+    if (s.parentId) chip("badge-c", "chip.child");
+    if (!tdFlags.childNodes.length) tdFlags.appendChild(el("span", "muted", "—"));
+    tr.appendChild(tdFlags);
 
     tr.appendChild(el("td", "cell-project", s.project || "-"));
 
@@ -318,7 +508,7 @@ function renderTable() {
     const deletable = rowDeletable(s);
     const delBtn = el("button", "btn-small danger", t("btn.delete"));
     delBtn.disabled = !deletable;
-    if (!deletable && canDeleteAll && STATE.zcodeRunning) {
+    if (!deletable && coreOpsAllowed() && STATE.zcodeRunning) {
       delBtn.title = t("banner.limited", {
         n: fmtDuration((STATE.settings && STATE.settings.idleMinutes) || 60),
       });
@@ -341,9 +531,12 @@ function updateSelInfo() {
 
 function bindToolbar() {
   $("search").addEventListener("input", renderTable);
-  $("filterSel").addEventListener("change", renderTable);
-  $("sortSel").addEventListener("change", renderTable);
   $("refreshBtn").addEventListener("click", refresh);
+  $("filterBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    togglePopover($("filterMenu"), $("filterBtn"));
+  });
+  $("filterMenu").addEventListener("click", (e) => e.stopPropagation());
   $("checkAll").addEventListener("change", () => {
     const rows = visibleSessions().filter((s) => rowDeletable(s));
     if ($("checkAll").checked) rows.forEach((s) => SELECTED.add(s.id));
@@ -626,38 +819,147 @@ function bindSettings() {
   });
 }
 
-// ---------- about ----------
+// ---------- about card + changelog + licenses ----------
 
 function renderAbout() {
   const body = $("aboutBody");
+  if (!body) return;
   body.textContent = "";
-  body.appendChild(el("p", "", `${t("about.version")}: v${(STATE && STATE.appVersion) || "1.0.0"}`));
-  body.appendChild(el("p", "", t("about.p1")));
-  body.appendChild(el("h4", "", t("about.changelogTitle")));
-  body.appendChild(el("p", "small", t("about.changelog100")));
-  body.appendChild(el("h4", "", t("about.layoutTitle")));
-  const ul = el("ul", "about-list");
-  for (const k of ["about.l1", "about.l2", "about.l3", "about.l4", "about.l5"]) {
-    ul.appendChild(el("li", "", t(k)));
-  }
-  body.appendChild(ul);
-  body.appendChild(el("h4", "", t("about.safetyTitle")));
-  const ul2 = el("ul", "about-list");
-  for (const k of ["about.s1", "about.s2", "about.s3", "about.s4"]) {
-    ul2.appendChild(el("li", "", t(k)));
-  }
-  body.appendChild(ul2);
-  body.appendChild(el("h4", "", t("about.complianceTitle")));
-  body.appendChild(el("p", "small", t("about.compliance")));
-  body.appendChild(el("h4", "", t("about.author")));
-  body.appendChild(el("p", "small", t("about.authorValue")));
-  body.appendChild(el("p", "small muted", t("about.github")));
+  const card = el("div", "about-card");
+
+  card.appendChild(el("div", "about-name", t("about.appName")));
+  card.appendChild(el("div", "about-version", `v${(STATE && STATE.appVersion) || "1.0.0"}`));
+
+  const author = el("div", "about-line");
+  author.appendChild(el("span", "about-k", t("about.author")));
+  author.appendChild(el("span", "about-v", t("about.authorValue")));
+  card.appendChild(author);
+
+  const gh = el("div", "about-line");
+  gh.appendChild(el("span", "about-k", t("about.repo")));
+  const link = el("a", "link", t("about.repoUrl"));
+  link.href = "#";
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    invoke("open_external", { url: GITHUB_URL }).catch(() => {});
+  });
+  gh.appendChild(link);
+  card.appendChild(gh);
+
+  const btns = el("div", "about-btns");
+  const notes = el("button", "", t("about.changelogBtn"));
+  notes.addEventListener("click", openChangelog);
+  const comps = el("button", "", t("about.licensesBtn"));
+  comps.addEventListener("click", openLicenses);
+  btns.appendChild(notes);
+  btns.appendChild(comps);
+  card.appendChild(btns);
+
+  card.appendChild(el("p", "muted small", t("about.complianceNote")));
+  body.appendChild(card);
 }
+
+function parseChangelog(text) {
+  const sections = [];
+  let cur = null;
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^##\s+\[(.+?)\]\s*(?:-\s*(.*))?$/);
+    if (m) {
+      cur = { version: m[1], date: (m[2] || "").trim(), lines: [] };
+      sections.push(cur);
+      continue;
+    }
+    if (cur && line.trim()) cur.lines.push(line.trim());
+  }
+  return sections;
+}
+
+async function openChangelog() {
+  let text;
+  try {
+    text = await invoke("changelog_text");
+  } catch (e) {
+    toast(errText(e));
+    return;
+  }
+  const body = $("changelogBody");
+  body.textContent = "";
+  const sections = parseChangelog(text);
+  if (!sections.length) body.appendChild(el("p", "muted", "—"));
+  sections.forEach((sec, i) => {
+    if (i > 0) body.appendChild(el("div", "section-divider"));
+    const head = el("div", "cl-head");
+    head.appendChild(el("span", "cl-version", sec.version));
+    if (sec.date) head.appendChild(el("span", "muted small", ` ${sec.date}`));
+    body.appendChild(head);
+    let list = null;
+    for (const line of sec.lines) {
+      if (line.startsWith("###")) {
+        body.appendChild(el("h5", "cl-sub", line.replace(/^#+\s*/, "")));
+        list = null;
+      } else if (line.startsWith("- ") || line.startsWith("* ")) {
+        if (!list) {
+          list = el("ul", "about-list");
+          body.appendChild(list);
+        }
+        list.appendChild(el("li", "", line.replace(/^[-*]\s*/, "")));
+      } else if (!line.startsWith("#")) {
+        body.appendChild(el("p", "small", line));
+        list = null;
+      }
+    }
+  });
+  $("changelogDlg").showModal();
+}
+
+async function openLicenses() {
+  let table;
+  let generated = true;
+  try {
+    const [rows, ok] = await Promise.all([
+      invoke("third_party"),
+      invoke("third_party_generated"),
+    ]);
+    table = rows;
+    generated = ok;
+  } catch (e) {
+    toast(errText(e));
+    return;
+  }
+  const body = $("licensesBody");
+  body.textContent = "";
+  if (!generated || !table.length) {
+    body.appendChild(el("p", "muted", t("licenses.unavailable")));
+  } else {
+    const tbl = el("table", "license-table");
+    const thead = el("thead");
+    const hr = el("tr");
+    for (const k of ["licenses.component", "licenses.version", "licenses.license"]) {
+      hr.appendChild(el("th", "", t(k)));
+    }
+    thead.appendChild(hr);
+    tbl.appendChild(thead);
+    const tbody = el("tbody");
+    for (const [name, version, license] of table) {
+      const tr = el("tr");
+      tr.appendChild(el("td", "", name));
+      tr.appendChild(el("td", "", version));
+      tr.appendChild(el("td", "", license));
+      tbody.appendChild(tr);
+    }
+    tbl.appendChild(tbody);
+    body.appendChild(tbl);
+  }
+  $("licensesDlg").showModal();
+}
+
+// ---------- help ----------
 
 function renderHelp() {
   const body = $("helpBody");
   if (!body) return;
   body.textContent = "";
+  body.appendChild(el("p", "", t("help.intro")));
   body.appendChild(el("h4", "", t("help.usageTitle")));
   const ul = el("ul", "about-list");
   for (const k of ["help.usage1", "help.usage2", "help.usage3"]) ul.appendChild(el("li", "", t(k)));
@@ -672,6 +974,12 @@ function renderHelp() {
   const ul3 = el("ul", "about-list");
   for (const k of ["help.data1", "help.data2"]) ul3.appendChild(el("li", "", t(k)));
   body.appendChild(ul3);
+  body.appendChild(el("h4", "", t("help.layoutTitle")));
+  const ul4 = el("ul", "about-list");
+  for (const k of ["about.l1", "about.l2", "about.l3", "about.l4", "about.l5"]) {
+    ul4.appendChild(el("li", "", t(k)));
+  }
+  body.appendChild(ul4);
 }
 
 // ---------- misc ----------
@@ -706,5 +1014,4 @@ function applyTheme(saved) {
       : "light";
   }
   document.documentElement.dataset.theme = theme;
-  $("themeSel").value = theme;
 }
