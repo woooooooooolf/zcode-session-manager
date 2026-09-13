@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ["V*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Test core
+        run: cargo test -p zsm-core
+
+      - name: Build app (release)
+        run: cargo build --release -p zsm-gui
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^V\d') { throw "unexpected tag: $tag" }
+          $version = $tag.Substring(1)
+          $cargoVersion = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          if ($cargoVersion -ne $version) {
+            throw "tag $tag does not match workspace version $cargoVersion"
+          }
+          $name = "zsm-windows-x64-$tag"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/zsm-gui.exe "dist/$name.exe"
+          Get-ChildItem dist
+
+      - name: Create release and upload assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $notes = @"
+          **zsm $tag — Windows x64**
+
+          - 免安装单文件：下载 ``zsm-windows-x64-$tag.exe`` 直接运行（约 11 MB，需系统自带 WebView2，Windows 10/11 通常已内置）
+          - 未做代码签名：首次运行如遇 SmartScreen 提示，选择"仍要运行"
+          - 首次打开自动定位 ZCode 数据目录；ZCode 运行时处于受限模式，仅可删除已归档且闲置超阈值的会话
+          - 详细变更见仓库内 CHANGELOG.md / See CHANGELOG.md for details
+          "@
+          gh release view "$tag" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$tag" (Get-ChildItem dist | ForEach-Object FullName) --clobber
+          } else {
+            gh release create "$tag" (Get-ChildItem dist | ForEach-Object FullName) --title "zsm $tag" --notes $notes
+          }

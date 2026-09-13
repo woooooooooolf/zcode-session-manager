@@ -44,6 +44,16 @@
 
 保留不动：`permission`、`local_setting`、`memories/`、`v2/checkpoints/`、`exec/shell-snapshots/` 等共享数据。
 
+## 下载与安装
+
+[Releases](https://github.com/woooooooooolf/zcode-session-manager/releases/latest) 提供免安装单文件版，
+命名规则 `zsm-平台-架构-V版本`，例如 `zsm-windows-x64-V1.0.0.exe`（约 11 MB，双击即用）。
+
+- 推送 `V*` tag 时由 GitHub Actions 自动构建、测试并发布，产物即工作流构建的可执行文件
+- 需要系统自带的 WebView2 运行时（Windows 10/11 通常已内置）
+- 可执行文件未做代码签名：首次运行如遇 SmartScreen 提示，选择"仍要运行"即可
+- 从源码构建：见下方"开发"一节
+
 ## 开发
 
 ```powershell
@@ -86,3 +96,7 @@ tools/make_icon.py  # 图标生成脚本
 
 - 不清理 `memories/`（按项目组织）与 `v2/checkpoints/`（全局快照，验证不含会话 ID）
 - 自动化配置（`automations` 表）若仍引用被删会话会给出警告，但不改动配置本体
+
+## 许可证
+
+[MIT](LICENSE)

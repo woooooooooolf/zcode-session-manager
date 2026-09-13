@@ -5,6 +5,7 @@ src-tauri/gen/
 # Local outputs
 backups/
 exports/
+dist/
 __pycache__/
 *.log
 
