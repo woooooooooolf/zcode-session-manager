@@ -1,6 +1,6 @@
 <div align="center">
 
-# ZCode Session Manager
+# ZCode 会话管理器
 
 简体中文 | [English](README.en.md)
 
