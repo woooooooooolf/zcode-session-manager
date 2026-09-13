@@ -11,6 +11,13 @@ const fn default_idle_minutes() -> u32 {
     60
 }
 
+/// ZCode process polling interval bounds (seconds).
+pub const POLL_MIN: u32 = 1;
+pub const POLL_MAX: u32 = 60;
+const fn default_poll_seconds() -> u32 {
+    4
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -24,6 +31,9 @@ pub struct Settings {
     /// Limited-mode idle threshold, stored canonically in minutes.
     #[serde(default = "default_idle_minutes")]
     pub idle_minutes: u32,
+    /// UI polling interval for the ZCode process probe, in seconds.
+    #[serde(default = "default_poll_seconds")]
+    pub poll_seconds: u32,
 }
 
 impl Default for Settings {
@@ -33,6 +43,7 @@ impl Default for Settings {
             language: String::new(), // empty = follow system locale
             theme: String::new(),    // empty = follow system preference
             idle_minutes: default_idle_minutes(),
+            poll_seconds: default_poll_seconds(),
         }
     }
 }
@@ -40,6 +51,10 @@ impl Default for Settings {
 impl Settings {
     pub fn idle_minutes_clamped(&self) -> i64 {
         self.idle_minutes.clamp(IDLE_MIN, IDLE_MAX) as i64
+    }
+
+    pub fn poll_seconds_clamped(&self) -> u32 {
+        self.poll_seconds.clamp(POLL_MIN, POLL_MAX)
     }
 }
 

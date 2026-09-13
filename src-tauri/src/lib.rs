@@ -223,6 +223,7 @@ fn set_prefs(
     language: Option<String>,
     theme: Option<String>,
     idle_minutes: Option<u32>,
+    poll_seconds: Option<u32>,
     mgr: State<AppMgr>,
 ) -> Settings {
     mgr.inner.settings.update(|s| {
@@ -234,6 +235,9 @@ fn set_prefs(
         }
         if let Some(m) = idle_minutes {
             s.idle_minutes = m.clamp(crate::settings::IDLE_MIN, crate::settings::IDLE_MAX);
+        }
+        if let Some(p) = poll_seconds {
+            s.poll_seconds = p.clamp(crate::settings::POLL_MIN, crate::settings::POLL_MAX);
         }
     });
     mgr.settings()

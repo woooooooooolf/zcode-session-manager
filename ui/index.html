@@ -11,10 +11,10 @@
     <button id="tab-sessions" class="tab active" data-i18n="tab.sessions">Sessions</button>
     <button id="tab-settings" class="tab" data-i18n="tab.settings">Settings</button>
     <span class="grow"></span>
-    <button id="themeBtn" class="icon-btn" data-i18n-title="theme.label" title="Theme">🎨</button>
-    <button id="langBtn" class="icon-btn" data-i18n-title="lang.label" title="Language">文A</button>
-    <button id="helpBtn" class="icon-btn" data-i18n-title="help.title" title="Help">?</button>
-    <button id="aboutBtn" class="icon-btn" data-i18n-title="about.title" title="About">ⓘ</button>
+    <button id="langBtn" class="tb-btn" title="中文 / English">中/EN</button>
+    <button id="themeBtn" class="tb-btn" data-i18n="theme.label">Theme</button>
+    <button id="helpBtn" class="tb-btn" data-i18n="help.title">Help</button>
+    <button id="aboutBtn" class="tb-btn" data-i18n="about.title">About</button>
   </nav>
 
   <div id="banners"></div>
@@ -23,14 +23,10 @@
     <section id="view-sessions">
       <div class="toolbar">
         <input id="search" type="search" data-i18n-ph="search.ph" autocomplete="off" spellcheck="false" />
-        <div class="dropdown">
-          <button id="filterBtn" class="dropdown-btn">
-            <span data-i18n="filter.label">Filter</span><span id="filterCount"></span><span class="caret">▾</span>
-          </button>
-          <div id="filterMenu" class="menu" hidden></div>
-        </div>
+        <div id="filterGroup" class="filter-group"></div>
+        <span class="grow"></span>
+        <span id="selInfo"></span>
         <button id="refreshBtn" data-i18n-title="btn.refresh" title="Refresh">⟳</button>
-        <span id="selInfo" class="grow"></span>
         <button id="deleteSelBtn" class="danger" disabled data-i18n="btn.deleteSelected">Delete selected</button>
       </div>
 
@@ -86,6 +82,21 @@
         </div>
         <p class="muted" data-i18n="set.limitsHint"></p>
         <p id="idleMsg" class="msg"></p>
+      </div>
+      <div class="panel">
+        <label for="pollSel" data-i18n="set.pollTitle">ZCode state monitor</label>
+        <div class="row">
+          <span class="muted" data-i18n="set.pollLabel">Polling interval</span>
+          <select id="pollSel">
+            <option value="1">1 s</option>
+            <option value="2">2 s</option>
+            <option value="4">4 s</option>
+            <option value="10">10 s</option>
+            <option value="30">30 s</option>
+          </select>
+        </div>
+        <p class="muted" data-i18n="set.pollHint"></p>
+        <p id="pollMsg" class="msg"></p>
       </div>
       <div class="panel">
         <label data-i18n="set.backups">Backups are stored in:</label>

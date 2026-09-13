@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   applyWindowTitle();
   renderAbout();
   renderHelp();
-  renderFilterMenu();
+  renderFilterGroup();
 
   bindHeader();
   bindTabs();
@@ -140,7 +140,7 @@ function togglePopover(menu, anchor) {
 }
 
 document.addEventListener("click", (e) => {
-  if (e.target.closest(".menu") || e.target.closest("#filterBtn") || e.target.closest("#themeBtn")) return;
+  if (e.target.closest(".menu") || e.target.closest("#themeBtn")) return;
   closePopovers();
 });
 document.addEventListener("keydown", (e) => {
@@ -177,7 +177,7 @@ function renderThemeMenu(menu) {
     }
     item.addEventListener("click", () => {
       document.documentElement.dataset.theme = value;
-      invoke("set_prefs", { language: null, theme: value, idleMinutes: null }).catch(() => {});
+      invoke("set_prefs", { language: null, theme: value, idleMinutes: null, pollSeconds: null }).catch(() => {});
       closePopovers();
       renderThemeMenu(menu);
     });
@@ -191,12 +191,12 @@ async function switchLang(lang) {
   applyWindowTitle();
   renderAbout();
   renderHelp();
-  renderFilterMenu();
+  renderFilterGroup();
   renderTable();
   // dynamically generated chrome must follow the language too
   renderBanners();
   renderFooter();
-  await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null }).catch(() => {});
+  await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null, pollSeconds: null }).catch(() => {});
 }
 
 /// Keep the native window title in sync with the UI language.
@@ -208,9 +208,12 @@ function applyWindowTitle() {
 
 // ---------- live ZCode state ----------
 
+let pollTimer = null;
+
 function startPolling() {
-  // the authoritative guard lives in delete_execute; this keeps the UI honest
-  setInterval(async () => {
+  clearInterval(pollTimer);
+  const secs = (STATE && STATE.settings && STATE.settings.pollSeconds) || 4;
+  pollTimer = setInterval(async () => {
     if (!STATE) return;
     try {
       const running = await invoke("is_zcode_running");
@@ -222,7 +225,7 @@ function startPolling() {
     } catch {
       /* transient probe failure — keep previous state */
     }
-  }, 4000);
+  }, secs * 1000);
 }
 
 // ---------- tabs ----------
@@ -344,34 +347,37 @@ function matchFilter(s) {
   return false;
 }
 
-function renderFilterMenu() {
-  const menu = $("filterMenu");
-  if (!menu) return;
-  menu.textContent = "";
+/// Flat, always-visible filter group: five checkboxes + a clear button that
+/// appears once anything is selected. Toggling re-renders immediately.
+function renderFilterGroup() {
+  const group = $("filterGroup");
+  if (!group) return;
+  group.textContent = "";
+  group.appendChild(el("span", "filter-label", t("filter.label")));
   for (const cat of ["active", "archived", "pinned", "child", "ghost"]) {
-    const item = el("label", "menu-item check-item");
+    const item = el("label", "filter-chip");
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = FILTER.has(cat);
     cb.addEventListener("change", () => {
       if (cb.checked) FILTER.add(cat);
       else FILTER.delete(cat);
-      $("filterCount").textContent = FILTER.size ? ` (${FILTER.size})` : "";
+      renderFilterGroup();
       renderTable();
     });
     item.appendChild(cb);
     item.appendChild(el("span", "", t(`cat.${cat}`)));
-    menu.appendChild(item);
+    group.appendChild(item);
   }
-  menu.appendChild(el("div", "menu-sep"));
-  const clear = el("button", "menu-item", t("filter.clear"));
-  clear.addEventListener("click", () => {
-    FILTER.clear();
-    $("filterCount").textContent = "";
-    renderFilterMenu();
-    renderTable();
-  });
-  menu.appendChild(clear);
+  if (FILTER.size) {
+    const clear = el("button", "filter-clear", t("filter.clear"));
+    clear.addEventListener("click", () => {
+      FILTER.clear();
+      renderFilterGroup();
+      renderTable();
+    });
+    group.appendChild(clear);
+  }
 }
 
 function sortKeyFn() {
@@ -532,11 +538,6 @@ function updateSelInfo() {
 function bindToolbar() {
   $("search").addEventListener("input", renderTable);
   $("refreshBtn").addEventListener("click", refresh);
-  $("filterBtn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    togglePopover($("filterMenu"), $("filterBtn"));
-  });
-  $("filterMenu").addEventListener("click", (e) => e.stopPropagation());
   $("checkAll").addEventListener("change", () => {
     const rows = visibleSessions().filter((s) => rowDeletable(s));
     if ($("checkAll").checked) rows.forEach((s) => SELECTED.add(s.id));
@@ -747,6 +748,22 @@ function renderSettings() {
   $("dirInput").value = STATE.settings.zcodeDir || STATE.detectedDefault || "";
   $("backupsPath").textContent = STATE.backupsDir || "-";
   renderIdleSetting();
+  renderPollSel();
+}
+
+/// Poll interval select: localized labels ("4 秒" / "4 s") + current value.
+function renderPollSel() {
+  const sel = $("pollSel");
+  if (!sel) return;
+  const current = (STATE && STATE.settings && STATE.settings.pollSeconds) || 4;
+  sel.textContent = "";
+  for (const v of [1, 2, 4, 10, 30]) {
+    const o = document.createElement("option");
+    o.value = String(v);
+    o.textContent = `${v} ${t("unit.seconds")}`;
+    sel.appendChild(o);
+  }
+  sel.value = String(current);
 }
 
 /// Threshold display: pick the largest unit that divides the stored minutes
@@ -804,7 +821,7 @@ function bindSettings() {
       return;
     }
     try {
-      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes });
+      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes, pollSeconds: null });
       STATE.settings = settings;
       renderIdleSetting();
       $("idleMsg").textContent = t("set.limitSaved", { n: fmtDuration(STATE.settings.idleMinutes) });
@@ -817,6 +834,17 @@ function bindSettings() {
   $("openBackupsBtn").addEventListener("click", () => {
     if (STATE && STATE.backupsDir) invoke("reveal_path", { path: STATE.backupsDir }).catch(() => {});
   });
+  $("pollSel").addEventListener("change", async () => {
+    const seconds = Number($("pollSel").value);
+    try {
+      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: null, pollSeconds: seconds });
+      STATE.settings = settings;
+      startPolling();
+      $("pollMsg").textContent = t("set.pollSaved", { n: STATE.settings.pollSeconds });
+    } catch (e) {
+      $("pollMsg").textContent = errText(e);
+    }
+  });
 }
 
 // ---------- about card + changelog + licenses ----------
@@ -828,7 +856,7 @@ function renderAbout() {
   const card = el("div", "about-card");
 
   card.appendChild(el("div", "about-name", t("about.appName")));
-  card.appendChild(el("div", "about-version", `v${(STATE && STATE.appVersion) || "1.0.0"}`));
+  card.appendChild(el("div", "about-version", `V${(STATE && STATE.appVersion) || "1.0.0"}`));
 
   const author = el("div", "about-line");
   author.appendChild(el("span", "about-k", t("about.author")));
@@ -855,21 +883,31 @@ function renderAbout() {
   btns.appendChild(comps);
   card.appendChild(btns);
 
-  card.appendChild(el("p", "muted small", t("about.complianceNote")));
   body.appendChild(card);
 }
 
+/// CHANGELOG.md is bilingual: `<!-- zh -->` / `<!-- en -->` comment markers
+/// split each section into language blocks (markers don't render on GitHub).
 function parseChangelog(text) {
   const sections = [];
   let cur = null;
+  let lang = "all";
   for (const line of text.split(/\r?\n/)) {
-    const m = line.match(/^##\s+\[(.+?)\]\s*(?:-\s*(.*))?$/);
-    if (m) {
-      cur = { version: m[1], date: (m[2] || "").trim(), lines: [] };
+    const h = line.match(/^##\s+\[(.+?)\]\s*(?:-\s*(.*))?$/);
+    if (h) {
+      cur = { version: h[1], date: (h[2] || "").trim(), lines: { all: [], zh: [], en: [] } };
       sections.push(cur);
+      lang = "all";
       continue;
     }
-    if (cur && line.trim()) cur.lines.push(line.trim());
+    if (!cur) continue;
+    const marker = line.match(/^<!--\s*(zh|en)\s*-->$/);
+    if (marker) {
+      lang = marker[1];
+      continue;
+    }
+    if (line.startsWith("<!--")) continue;
+    if (line.trim()) cur.lines[lang].push(line.trim());
   }
   return sections;
 }
@@ -892,8 +930,16 @@ async function openChangelog() {
     head.appendChild(el("span", "cl-version", sec.version));
     if (sec.date) head.appendChild(el("span", "muted small", ` ${sec.date}`));
     body.appendChild(head);
+    const pick =
+      sec.lines[CURRENT_LANG] && sec.lines[CURRENT_LANG].length
+        ? sec.lines[CURRENT_LANG]
+        : sec.lines.all.length
+          ? sec.lines.all
+          : sec.lines.zh.length
+            ? sec.lines.zh
+            : sec.lines.en;
     let list = null;
-    for (const line of sec.lines) {
+    for (const line of pick) {
       if (line.startsWith("###")) {
         body.appendChild(el("h5", "cl-sub", line.replace(/^#+\s*/, "")));
         list = null;
@@ -962,7 +1008,7 @@ function renderHelp() {
   body.appendChild(el("p", "", t("help.intro")));
   body.appendChild(el("h4", "", t("help.usageTitle")));
   const ul = el("ul", "about-list");
-  for (const k of ["help.usage1", "help.usage2", "help.usage3"]) ul.appendChild(el("li", "", t(k)));
+  for (const k of ["help.usage1", "help.usage2", "help.usage3", "help.usage4"]) ul.appendChild(el("li", "", t(k)));
   body.appendChild(ul);
   body.appendChild(el("h4", "", t("help.badgesTitle")));
   const ul2 = el("ul", "about-list");

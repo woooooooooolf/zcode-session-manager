@@ -76,6 +76,8 @@
 
 /* Base */
 * { box-sizing: border-box; }
+/* the hidden attribute must always win over component display rules */
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   margin: 0;
@@ -125,14 +127,52 @@ button.danger { background: var(--danger); color: var(--danger-fg); border-color
 .btn-small { padding: 2px 9px; font-size: 12px; }
 .btn-small + .btn-small { margin-left: 6px; }
 
-/* dropdown / popover menus (filter, theme) */
-.dropdown { position: relative; }
-.dropdown-btn { display: inline-flex; align-items: center; gap: 6px; }
-.dropdown-btn .caret { font-size: 10px; color: var(--muted); }
+/* uniform text buttons in the tab bar (language / theme / help / about) */
+.tb-btn {
+  padding: 5px 12px;
+  min-width: 64px;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* flat filter group inline in the toolbar */
+.filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+.filter-label { color: var(--muted); font-size: 12px; margin-right: 2px; }
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 12.5px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  user-select: none;
+}
+.filter-chip:hover { background: var(--bg-hover); }
+.filter-chip input { margin: 0; accent-color: var(--accent); }
+.filter-clear {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 2px 6px;
+  text-decoration: underline;
+}
+
+/* popover menu (theme picker) */
 .menu {
   position: fixed;
   z-index: 50;
-  min-width: 200px;
+  min-width: 180px;
   background: var(--bg-panel);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -142,7 +182,6 @@ button.danger { background: var(--danger); color: var(--danger-fg); border-color
   display: flex;
   flex-direction: column;
 }
-.menu[hidden] { display: none; }
 .menu-item {
   display: flex;
   align-items: center;
@@ -157,8 +196,6 @@ button.danger { background: var(--danger); color: var(--danger-fg); border-color
 }
 .menu-item:hover { background: var(--bg-hover); }
 .menu-item .menu-check { margin-left: auto; color: var(--accent); }
-.check-item input { margin: 0; }
-.menu-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 
 /* Banners */
 #banners:empty { display: none; }
@@ -249,22 +286,22 @@ dialog.modal {
   padding: 16px 18px; width: 560px; max-width: 92vw; max-height: 82vh;
 }
 dialog.wide { width: 760px; }
-dialog.narrow { width: 420px; }
+dialog.narrow { width: 560px; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .modal-head { display: flex; align-items: center; margin-bottom: 8px; }
 .modal-head h3 { margin: 0; font-size: 15px; }
 .modal-head .close-x { margin-left: auto; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
-/* About card */
-.about-card { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; }
+/* About card — a centered "business card" */
+.about-card { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; align-items: center; text-align: center; }
 .about-name { font-size: 17px; font-weight: 700; }
 .about-version { color: var(--muted); font-variant-numeric: tabular-nums; }
-.about-line { display: flex; gap: 10px; align-items: baseline; }
-.about-k { color: var(--muted); min-width: 64px; }
+.about-line { display: flex; gap: 10px; align-items: baseline; justify-content: center; }
+.about-k { color: var(--muted); }
 .about-v { word-break: break-all; }
-.link { color: var(--accent); cursor: pointer; text-decoration: underline; word-break: break-all; }
-.about-btns { display: flex; gap: 8px; margin-top: 8px; }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+.about-btns { display: flex; gap: 8px; margin-top: 8px; justify-content: center; }
 
 /* changelog / licenses dialogs */
 .section-divider { border-top: 1px solid var(--border); margin: 14px 0; }
