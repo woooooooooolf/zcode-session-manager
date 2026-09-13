@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 **界面与信息架构二次改版。**
 
 ### 新增
+- 备份保存位置可在设置中修改（或一键恢复默认的 `zsm-backups\`）。
+- README 提供中英双语版本，配图使用虚构演示数据按语言分别截图。
 - 子会话在列表中树形缩进展示，任何排序下都保持父子相邻。
 - 新增独立的"标记"列，以彩色文字芯片显示会话类型（已归档 / 置顶 / 子会话 / 残影），随界面语言切换。
 - 列头点击排序（正序 / 逆序切换，带方向箭头），取代排序下拉框。
@@ -23,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 **Second major UI and information-architecture overhaul.**
 
 ### Added
+- Configurable backup location: the backup directory can be changed in Settings
+  (or reset to the default `zsm-backups\` next to the ZCode data directory).
+- Bilingual README (Chinese default, English companion) with per-language
+  screenshots taken from a fictional demo dataset.
 - Child sessions are indented under their parent in a tree that survives any sorting.
 - Dedicated badges column with full-text chips (archived / pinned / child / ghost) that follow the UI language.
 - Column-header sorting with direction arrows replaces the sort dropdown.

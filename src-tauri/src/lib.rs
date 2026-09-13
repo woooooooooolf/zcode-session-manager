@@ -39,7 +39,9 @@ impl AppMgr {
                 "the configured directory does not look like a ZCode data directory",
             ));
         }
-        Ok(Store::new(Paths::from_zcode_dir(&dir)))
+        let mut store = Store::new(Paths::from_zcode_dir(&dir));
+        store.backups_dir = self.settings().backups_dir;
+        Ok(store)
     }
 }
 
@@ -127,7 +129,7 @@ fn build_state(mgr: &AppMgr) -> AppStateOut {
         .map(std::path::PathBuf::from)
         .or_else(|| detected.clone());
     let mut out = AppStateOut {
-        settings,
+        settings: settings.clone(),
         detected_default: detected.map(|p| p.to_string_lossy().to_string()),
         db_path: None,
         cli_dir: None,
@@ -142,7 +144,11 @@ fn build_state(mgr: &AppMgr) -> AppStateOut {
             let paths = Paths::from_zcode_dir(&dir);
             out.db_path = Some(paths.db_path.to_string_lossy().to_string());
             out.cli_dir = Some(paths.cli_dir.to_string_lossy().to_string());
-            out.backups_dir = Some(zsm_core::backup::backups_base(&paths).to_string_lossy().to_string());
+            out.backups_dir = Some(
+                zsm_core::backup::backups_base(&paths, settings.backups_dir.as_deref())
+                    .to_string_lossy()
+                    .to_string(),
+            );
             out.compat = Some(zsm_core::compat::check(&paths));
             out.integrity = vec![
                 DbStatusOut {
@@ -224,6 +230,7 @@ fn set_prefs(
     theme: Option<String>,
     idle_minutes: Option<u32>,
     poll_seconds: Option<u32>,
+    backups_dir: Option<String>,
     mgr: State<AppMgr>,
 ) -> Settings {
     mgr.inner.settings.update(|s| {
@@ -239,7 +246,15 @@ fn set_prefs(
         if let Some(p) = poll_seconds {
             s.poll_seconds = p.clamp(crate::settings::POLL_MIN, crate::settings::POLL_MAX);
         }
+        if let Some(b) = backups_dir {
+            // empty string resets to the default location
+            s.backups_dir = if b.trim().is_empty() { None } else { Some(b) };
+        }
     });
+    // make sure a custom backup directory actually exists before it is needed
+    if let Some(b) = mgr.settings().backups_dir.clone() {
+        let _ = std::fs::create_dir_all(&b);
+    }
     mgr.settings()
 }
 

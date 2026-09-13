@@ -131,6 +131,8 @@ pub struct DeleteResult {
 
 pub struct Store {
     pub paths: Paths,
+    /// User-configured backup directory (None = default `<zcode>/zsm-backups`).
+    pub backups_dir: Option<String>,
 }
 
 /// How to behave when ZCode is running.
@@ -146,7 +148,10 @@ pub enum RunningPolicy {
 
 impl Store {
     pub fn new(paths: Paths) -> Self {
-        Self { paths }
+        Self {
+            paths,
+            backups_dir: None,
+        }
     }
 
     // ---------------- listing ----------------
@@ -495,7 +500,9 @@ impl Store {
             metas,
             counts,
             disk_bytes,
-            backups_dir: backup::backups_base(&self.paths).to_string_lossy().to_string(),
+            backups_dir: backup::backups_base(&self.paths, self.backups_dir.as_deref())
+                .to_string_lossy()
+                .to_string(),
         })
     }
 
@@ -551,7 +558,7 @@ impl Store {
         }
 
         // 1. backup (simple copy, timestamped dir)
-        let backup_dir = backup::new_backup_dir(&self.paths)?;
+        let backup_dir = backup::new_backup_dir(&self.paths, self.backups_dir.as_deref())?;
         backup::copy_database(&self.paths.db_path, &backup_dir)?;
         backup::copy_database(&self.paths.tasks_db, &backup_dir)?;
         let records =

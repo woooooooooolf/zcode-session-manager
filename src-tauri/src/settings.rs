@@ -34,6 +34,9 @@ pub struct Settings {
     /// UI polling interval for the ZCode process probe, in seconds.
     #[serde(default = "default_poll_seconds")]
     pub poll_seconds: u32,
+    /// User-configured backup directory; None = default `<zcode>/zsm-backups`.
+    #[serde(default)]
+    pub backups_dir: Option<String>,
 }
 
 impl Default for Settings {
@@ -44,6 +47,7 @@ impl Default for Settings {
             theme: String::new(),    // empty = follow system preference
             idle_minutes: default_idle_minutes(),
             poll_seconds: default_poll_seconds(),
+            backups_dir: None,
         }
     }
 }

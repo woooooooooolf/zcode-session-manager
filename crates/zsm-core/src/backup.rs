@@ -13,12 +13,17 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub fn backups_base(paths: &Paths) -> PathBuf {
-    paths.zcode_dir.join("zsm-backups")
+/// Effective backup base: the user-configured directory, or the default
+/// `<zcode>/zsm-backups` when unset.
+pub fn backups_base(paths: &Paths, custom: Option<&str>) -> PathBuf {
+    match custom.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(dir) => PathBuf::from(dir),
+        None => paths.zcode_dir.join("zsm-backups"),
+    }
 }
 
-pub fn new_backup_dir(paths: &Paths) -> io::Result<PathBuf> {
-    let base = backups_base(paths);
+pub fn new_backup_dir(paths: &Paths, custom: Option<&str>) -> io::Result<PathBuf> {
+    let base = backups_base(paths, custom);
     fs::create_dir_all(&base)?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let mut dir = base.join(&stamp);

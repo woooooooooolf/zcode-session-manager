@@ -177,7 +177,7 @@ function renderThemeMenu(menu) {
     }
     item.addEventListener("click", () => {
       document.documentElement.dataset.theme = value;
-      invoke("set_prefs", { language: null, theme: value, idleMinutes: null, pollSeconds: null }).catch(() => {});
+      invoke("set_prefs", { language: null, theme: value, idleMinutes: null, pollSeconds: null, backupsDir: null }).catch(() => {});
       closePopovers();
       renderThemeMenu(menu);
     });
@@ -196,7 +196,7 @@ async function switchLang(lang) {
   // dynamically generated chrome must follow the language too
   renderBanners();
   renderFooter();
-  await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null, pollSeconds: null }).catch(() => {});
+  await invoke("set_prefs", { language: CURRENT_LANG, theme: null, idleMinutes: null, pollSeconds: null, backupsDir: null }).catch(() => {});
 }
 
 /// Keep the native window title in sync with the UI language.
@@ -746,6 +746,8 @@ function showResult(res) {
 function renderSettings() {
   if (!STATE) return;
   $("dirInput").value = STATE.settings.zcodeDir || STATE.detectedDefault || "";
+  $("backupsInput").value = STATE.settings.backupsDir || "";
+  $("backupsInput").placeholder = STATE.backupsDir || "";
   $("backupsPath").textContent = STATE.backupsDir || "-";
   renderIdleSetting();
   renderPollSel();
@@ -821,7 +823,7 @@ function bindSettings() {
       return;
     }
     try {
-      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes, pollSeconds: null });
+      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: minutes, pollSeconds: null, backupsDir: null });
       STATE.settings = settings;
       renderIdleSetting();
       $("idleMsg").textContent = t("set.limitSaved", { n: fmtDuration(STATE.settings.idleMinutes) });
@@ -837,7 +839,7 @@ function bindSettings() {
   $("pollSel").addEventListener("change", async () => {
     const seconds = Number($("pollSel").value);
     try {
-      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: null, pollSeconds: seconds });
+      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: null, pollSeconds: seconds, backupsDir: null });
       STATE.settings = settings;
       startPolling();
       $("pollMsg").textContent = t("set.pollSaved", { n: STATE.settings.pollSeconds });
@@ -845,6 +847,27 @@ function bindSettings() {
       $("pollMsg").textContent = errText(e);
     }
   });
+  $("browseBackupsBtn").addEventListener("click", async () => {
+    try {
+      const picked = await invoke("pick_folder");
+      if (picked) $("backupsInput").value = picked;
+    } catch (e) {
+      toast(errText(e));
+    }
+  });
+  const saveBackupsDir = async (value) => {
+    try {
+      const settings = await invoke("set_prefs", { language: null, theme: null, idleMinutes: null, pollSeconds: null, backupsDir: value });
+      STATE = await invoke("app_state");
+      STATE.settings = settings;
+      renderSettings();
+      $("backupsMsg").textContent = t("set.backupsSaved");
+    } catch (e) {
+      $("backupsMsg").textContent = errText(e);
+    }
+  };
+  $("saveBackupsBtn").addEventListener("click", () => saveBackupsDir($("backupsInput").value.trim()));
+  $("resetBackupsBtn").addEventListener("click", () => saveBackupsDir(""));
 }
 
 // ---------- about card + changelog + licenses ----------

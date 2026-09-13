@@ -99,11 +99,18 @@
         <p id="pollMsg" class="msg"></p>
       </div>
       <div class="panel">
-        <label data-i18n="set.backups">Backups are stored in:</label>
+        <label for="backupsInput" data-i18n="set.backupsTitle">Backup location</label>
         <div class="row">
-          <code id="backupsPath" class="grow"></code>
+          <input id="backupsInput" type="text" spellcheck="false" autocomplete="off" />
+          <button id="browseBackupsBtn" data-i18n="set.browse">Browse…</button>
+          <button id="saveBackupsBtn" class="primary" data-i18n="set.save">Save</button>
+          <button id="resetBackupsBtn" data-i18n="set.backupsReset">Default</button>
           <button id="openBackupsBtn" data-i18n="set.openBackups">Open</button>
         </div>
+        <p class="muted" data-i18n="set.backupsHint"></p>
+        <p class="muted small" data-i18n="set.backups"></p>
+        <code id="backupsPath" class="small"></code>
+        <p id="backupsMsg" class="msg"></p>
       </div>
     </section>
   </main>

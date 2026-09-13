@@ -245,7 +245,7 @@ fn ghost_cleanup_removes_index_rows_only() {
 fn restore_from_backup_recovers_corrupted_db() {
     let fx = make_fixture();
     // build a backup the same way execute_delete does
-    let backup_dir = backup::new_backup_dir(&fx.paths).unwrap();
+    let backup_dir = backup::new_backup_dir(&fx.paths, None).unwrap();
     backup::copy_database(&fx.paths.db_path, &backup_dir).unwrap();
     backup::copy_database(&fx.paths.tasks_db, &backup_dir).unwrap();
     let records =
