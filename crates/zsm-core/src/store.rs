@@ -151,6 +151,17 @@ impl Store {
 
     // ---------------- listing ----------------
 
+    /// Epoch-ms column reader that tolerates REAL-typed timestamps — SQLite is
+    /// dynamically typed and third-party data may store ms as float.
+    fn col_ms(r: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<i64> {
+        match r.get::<_, Option<i64>>(idx) {
+            Ok(v) => Ok(v.unwrap_or(0)),
+            Err(_) => r
+                .get::<_, Option<f64>>(idx)
+                .map(|v| v.unwrap_or(0.0) as i64),
+        }
+    }
+
     pub fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
         let con = open_ro(&self.paths.db_path)?;
         let mut stmt = con.prepare(
@@ -167,8 +178,8 @@ impl Store {
                 task_type: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 project: r.get::<_, Option<String>>(3)?.unwrap_or_default(),
                 parent_id: r.get(4)?,
-                created_ms: r.get::<_, Option<i64>>(5)?.unwrap_or(0),
-                updated_ms: r.get::<_, Option<i64>>(6)?.unwrap_or(0),
+                created_ms: Self::col_ms(r, 5)?,
+                updated_ms: Self::col_ms(r, 6)?,
                 message_count: r.get(7).ok(),
                 child_count: r.get::<_, Option<i64>>(8)?.unwrap_or(0),
                 archived: false,
@@ -177,8 +188,14 @@ impl Store {
                 disk_bytes: 0,
             })
         })?;
-        let mut out: Vec<SessionSummary> = rows.filter_map(|r| r.ok()).collect();
-
+        let mut out: Vec<SessionSummary> = Vec::new();
+        for r in rows {
+            match r {
+                Ok(s) => out.push(s),
+                // a row that fails mapping must not vanish silently
+                Err(e) => eprintln!("[zsm] list row skipped: {e}"),
+            }
+        }
         let flags = self.index_flags();
         let mut seen: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
         if let Some(map) = &flags {
