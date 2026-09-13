@@ -3,6 +3,27 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.0.0`).
 
+## [Unreleased]
+
+### Added
+
+- Tree view: child sessions are indented under their parent regardless of the active sort.
+- Dedicated badges column with full-text chips (archived / pinned / child / ghost), replacing letter badges.
+- Column-header sorting with direction arrows (replaces the sort dropdown).
+- Combinable category filter (in use / archived / pinned / child / ghost) as a multi-select menu.
+- Theme picker as an icon menu; language toggle as a one-click icon button.
+- About is now a simple card (name, version, author, GitHub link) with two sub-dialogs:
+  release notes (parsed from the CHANGELOG.md bundled at compile time) and open-source
+  components (name / version / license table generated at build time via `cargo metadata`).
+- ZCode running state is polled live, so the limited-mode banner and row gating stay accurate
+  when ZCode starts or exits after this app does.
+
+### Changed
+
+- Settings panels scale with the window; the sessions table fills the viewport so both
+  scrollbars stay visible.
+- Search matches titles only; WebView2 form autofill disabled on all inputs.
+
 ## [1.0.0] - 2026-09-13
 
 First complete release.
