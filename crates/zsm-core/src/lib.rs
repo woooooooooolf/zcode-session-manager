@@ -44,6 +44,7 @@ pub fn zcode_running() -> bool {
     let sys = System::new_all();
     let self_pid = std::process::id();
     sys.processes().iter().any(|(pid, p)| {
-        pid.as_u32() != self_pid && p.name().to_lowercase().contains("zcode")
+        pid.as_u32() != self_pid
+            && p.name().to_string_lossy().to_lowercase().contains("zcode")
     })
 }
