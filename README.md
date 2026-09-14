@@ -9,11 +9,11 @@
 </div>
 
 ZCode 目前只提供"归档"：历史会话从列表里消失，却仍然留存在数据库和磁盘中——看不见，也删不掉。
-**ZCode Session Manager 补上缺失的另一半**：浏览全部历史会话（含已归档），并把选定的会话从
+**ZCode 会话管理器补上缺失的另一半**：浏览全部历史会话（含已归档），并把选定的会话从
 ZCode 数据库与磁盘中**彻底删除**。删除前自动备份，删除后自动校验，出问题可整体恢复。
 
 <div align="center">
-  <img src="docs/screenshot.png" alt="ZCode Session Manager 主界面（演示数据）" width="880" />
+  <img src="docs/screenshot.png" alt="ZCode 会话管理器主界面（演示数据）" width="880" />
 </div>
 
 ## 功能
