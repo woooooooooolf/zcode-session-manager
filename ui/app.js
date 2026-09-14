@@ -463,16 +463,77 @@ function visibleSessions() {
 
 // ---------- table ----------
 
+// ---------- column widths ----------
+
+// checkbox, title, badges, project, updated, msgs, size, actions
+const SESS_MIN_WIDTHS = [34, 150, 64, 110, 150, 64, 72, 96];
+const SESS_RESIZABLE = [false, true, true, true, true, true, true, false];
+let colWidths = null; // null = follow the browser's auto layout (initial render)
+
+/// Freeze the auto-layout widths into the colgroup once, switch the table
+/// to fixed layout, and add drag handles on resizable header cells.
+function initColumnWidths() {
+  if (colWidths) return;
+  const table = $("sessTable");
+  if (!table || table.offsetParent === null) return; // view not visible yet
+  const ths = table.querySelectorAll("thead th");
+  if (ths.length !== SESS_MIN_WIDTHS.length) return;
+  colWidths = [...ths].map((th, i) => Math.max(th.offsetWidth, SESS_MIN_WIDTHS[i]));
+  table.style.tableLayout = "fixed";
+  applyColWidths();
+
+  ths.forEach((th, i) => {
+    if (!SESS_RESIZABLE[i]) return;
+    const grip = el("div", "col-grip");
+    grip.title = "";
+    grip.addEventListener("pointerdown", (e) => startColDrag(e, i));
+    grip.addEventListener("click", (e) => e.stopPropagation()); // don't trigger sorting
+    th.appendChild(grip);
+  });
+}
+
+function applyColWidths() {
+  const cols = $("sessCols").children;
+  colWidths.forEach((w, i) => {
+    cols[i].style.width = w + "px";
+  });
+  $("sessTable").style.minWidth = colWidths.reduce((a, b) => a + b, 0) + "px";
+}
+
+function startColDrag(e, i) {
+  e.preventDefault();
+  e.stopPropagation();
+  const startX = e.clientX;
+  const startW = colWidths[i];
+  const move = (ev) => {
+    const w = Math.max(SESS_MIN_WIDTHS[i], startW + ev.clientX - startX);
+    if (w !== colWidths[i]) {
+      colWidths[i] = w;
+      applyColWidths();
+    }
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    document.body.style.cursor = "";
+  };
+  document.body.style.cursor = "col-resize";
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+}
+
 function renderTable() {
   if (SCAN_ERROR) {
     showTableState("error");
     return;
   }
+  initColumnWidths();
   const rows = visibleSessions();
   const body = $("sessBody");
   body.textContent = "";
   showTableState(rows.length ? "ok" : "empty");
 
+  const canDeleteAll = coreOpsAllowed();
   for (const s of rows) {
     const tr = el("tr");
 

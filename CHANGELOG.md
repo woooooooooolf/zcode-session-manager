@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 
 ## [Unreleased]
 <!-- zh -->
+### 新增
+- 会话列表支持手动调整列宽（拖动表头右缘手柄），并带最小宽度限制，窄窗口下表头不再与内容重叠。
+<!-- en -->
+### Added
+- Manual column resizing in the sessions table (drag the handle on a header's right
+  edge) with per-column minimum widths, so headers no longer overlap on narrow windows.
 ### 调整
 - 状态横幅紧贴选项卡栏边界显示，且仅在会话列表页出现。
 - 帮助改为独立选项卡（原弹窗）。
