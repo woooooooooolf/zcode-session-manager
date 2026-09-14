@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 
 ## [Unreleased]
 <!-- zh -->
+### 修复
+- 表头列间分割线在首次打开时即显示（此前仅在点击排序后出现）。
+- 列宽改为按表格宽度百分比存储，窗口缩放时列宽等比伸缩，正常窗口宽度下不再出现水平滚动条；各列保留最小宽度。
+<!-- en -->
+### Fixed
+- Header separators are visible immediately on launch (previously they only
+  appeared after clicking a header).
+- Column widths are stored as percentages of the table, so resizing the
+  window scales them proportionally and no horizontal scrollbar appears at
+  normal window sizes; per-column minimum widths still apply.
 ### 新增
 - 会话列表支持手动调整列宽（拖动表头右缘手柄），并带最小宽度限制，窄窗口下表头不再与内容重叠。
 <!-- en -->
