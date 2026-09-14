@@ -463,104 +463,11 @@ function visibleSessions() {
 
 // ---------- table ----------
 
-// ---------- column widths ----------
-
-// checkbox, title, badges, project, updated, msgs, size, actions
-const COL_MIN_PX = [34, 150, 64, 110, 150, 64, 72, 96];
-const COL_RESIZABLE = [false, true, true, true, true, true, true, false];
-let colPct = null; // column widths in percent of the table (sum ≈ 100)
-
-function wrapWidth() {
-  return $("sessTable").parentElement.clientWidth || 1;
-}
-
-function minPctOf(i) {
-  return COL_MIN_PX[i] / wrapWidth() * 100;
-}
-
-/// Freeze the browser's auto-measured proportions into percentages once,
-/// switch the table to fixed layout, and add drag handles. Percent widths
-/// scale with the window, so no horizontal scrollbar ever appears at
-/// reasonable window sizes.
-function initColPct() {
-  if (colPct) return;
-  const table = $("sessTable");
-  if (!table || table.offsetParent === null) return; // view not visible yet
-  const ths = table.querySelectorAll("thead th");
-  if (ths.length !== COL_MIN_PX.length) return;
-  const total = [...ths].reduce((s, th) => s + th.offsetWidth, 0) || 1;
-  colPct = [...ths].map((th, i) => Math.max(th.offsetWidth, COL_MIN_PX[i]) / total * 100);
-  normalizePct();
-  table.style.tableLayout = "fixed";
-  table.style.minWidth = COL_MIN_PX.reduce((a, b) => a + b, 0) + "px";
-  applyColPct();
-
-  ths.forEach((th, i) => {
-    if (!COL_RESIZABLE[i]) return;
-    const grip = el("div", "col-grip");
-    grip.addEventListener("pointerdown", (e) => startColDrag(e, i));
-    grip.addEventListener("click", (e) => e.stopPropagation()); // don't trigger sorting
-    th.appendChild(grip);
-  });
-}
-
-function normalizePct() {
-  const sum = colPct.reduce((a, b) => a + b, 0);
-  if (sum > 0) colPct = colPct.map((p) => p / sum * 100);
-}
-
-function applyColPct() {
-  const cols = $("sessCols").children;
-  colPct.forEach((p, i) => {
-    cols[i].style.width = p + "%";
-  });
-}
-
-function startColDrag(e, i) {
-  e.preventDefault();
-  e.stopPropagation();
-  const startX = e.clientX;
-  const startPct = colPct[i];
-  const others = colPct.map((_, j) => j).filter((j) => j !== i && COL_RESIZABLE[j]);
-  const slack = others.reduce((s, j) => s + colPct[j] - minPctOf(j), 0);
-  const move = (ev) => {
-    const dPct = (ev.clientX - startX) / wrapWidth() * 100;
-    const want = startPct + dPct;
-    const grow = want - startPct;
-    if (grow > 0 && slack > 0) {
-      // widen: take from the other resizable columns, each down to its minimum
-      const take = Math.min(grow, slack);
-      others.forEach((j) => {
-        colPct[j] -= take * ((colPct[j] - minPctOf(j)) / slack);
-      });
-      colPct[i] += take;
-    } else if (grow < 0) {
-      // narrow: hand the space back to the other resizable columns
-      const pool = others.reduce((s, j) => s + colPct[j], 0) || 1;
-      others.forEach((j) => {
-        colPct[j] += -grow * (colPct[j] / pool);
-      });
-      colPct[i] = startPct;
-    }
-    normalizePct();
-    applyColPct();
-  };
-  const up = () => {
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerup", up);
-    document.body.style.cursor = "";
-  };
-  document.body.style.cursor = "col-resize";
-  window.addEventListener("pointermove", move);
-  window.addEventListener("pointerup", up);
-}
-
 function renderTable() {
   if (SCAN_ERROR) {
     showTableState("error");
     return;
   }
-  initColPct();
   const rows = visibleSessions();
   const body = $("sessBody");
   body.textContent = "";

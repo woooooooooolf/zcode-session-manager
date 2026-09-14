@@ -5,34 +5,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 
 ## [Unreleased]
 <!-- zh -->
-### 修复
-- 表头列间分割线在首次打开时即显示（此前仅在点击排序后出现）。
-- 列宽改为按表格宽度百分比存储，窗口缩放时列宽等比伸缩，正常窗口宽度下不再出现水平滚动条；各列保留最小宽度。
-<!-- en -->
-### Fixed
-- Header separators are visible immediately on launch (previously they only
-  appeared after clicking a header).
-- Column widths are stored as percentages of the table, so resizing the
-  window scales them proportionally and no horizontal scrollbar appears at
-  normal window sizes; per-column minimum widths still apply.
-### 新增
-- 会话列表支持手动调整列宽（拖动表头右缘手柄），并带最小宽度限制，窄窗口下表头不再与内容重叠。
-<!-- en -->
-### Added
-- Manual column resizing in the sessions table (drag the handle on a header's right
-  edge) with per-column minimum widths, so headers no longer overlap on narrow windows.
 ### 调整
 - 状态横幅紧贴选项卡栏边界显示，且仅在会话列表页出现。
 - 帮助改为独立选项卡（原弹窗）。
 - 设置页去除冗余标题，卡片更紧凑。
+- 会话表格改为固定比例列宽（纯 CSS），表头居中、排序箭头固定于列右缘；任何窗口宽度下都不出现水平滚动条。
 ### 修复
+- 表头列间分割线在首次打开时即显示（此前仅在点击排序后出现）。
 - 版本说明支持渲染行内 markdown（粗体与行内代码）。
 - 禁用窗口右键菜单（WebView2 默认菜单在本应用无实际用途）。
 <!-- en -->
 ### Changed
 - Banners render flush against the tab bar and only on the sessions view; Help became a
   full-window tab; the Settings page lost its redundant title and uses compact cards.
+- The sessions table now uses fixed proportional column widths (pure CSS) with centered
+  headers and the sort arrow pinned to each column's right edge; no horizontal scrollbar
+  at any window size.
 ### Fixed
+- Header separators are visible immediately on launch (previously they only appeared
+  after clicking a header).
 - Release notes render inline markdown (bold and inline code).
 - The WebView2 default context menu is disabled.
 
