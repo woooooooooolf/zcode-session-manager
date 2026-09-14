@@ -162,7 +162,6 @@ function bindHeader() {
     togglePopover(themeMenu, $("themeBtn"));
   });
 
-  $("helpBtn").addEventListener("click", () => $("helpDlg").showModal());
   $("aboutBtn").addEventListener("click", () => $("aboutDlg").showModal());
 }
 
@@ -233,13 +232,16 @@ function startPolling() {
 function bindTabs() {
   $("tab-sessions").addEventListener("click", () => switchTab("sessions"));
   $("tab-settings").addEventListener("click", () => switchTab("settings"));
+  $("tab-help").addEventListener("click", () => switchTab("help"));
 }
 
 function switchTab(name) {
   $("view-sessions").hidden = name !== "sessions";
   $("view-settings").hidden = name !== "settings";
-  $("tab-sessions").classList.toggle("active", name === "sessions");
-  $("tab-settings").classList.toggle("active", name === "settings");
+  $("view-help").hidden = name !== "help";
+  ["sessions", "settings", "help"].forEach(
+    (t) => $(`tab-${t}`).classList.toggle("active", t === name)
+  );
 }
 
 // ---------- data refresh ----------

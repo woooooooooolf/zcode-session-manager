@@ -10,17 +10,16 @@
   <nav class="tabs">
     <button id="tab-sessions" class="tab active" data-i18n="tab.sessions">Sessions</button>
     <button id="tab-settings" class="tab" data-i18n="tab.settings">Settings</button>
+    <button id="tab-help" class="tab" data-i18n="help.title">Help</button>
     <span class="grow"></span>
     <button id="langBtn" class="tb-btn" title="中文 / English">中/EN</button>
     <button id="themeBtn" class="tb-btn" data-i18n="theme.label">Theme</button>
-    <button id="helpBtn" class="tb-btn" data-i18n="help.title">Help</button>
     <button id="aboutBtn" class="tb-btn" data-i18n="about.title">About</button>
   </nav>
 
-  <div id="banners"></div>
-
   <main>
     <section id="view-sessions">
+      <div id="banners"></div>
       <div class="toolbar">
         <input id="search" type="search" data-i18n-ph="search.ph" autocomplete="off" spellcheck="false" />
         <div id="filterGroup" class="filter-group"></div>
@@ -57,7 +56,6 @@
     </section>
 
     <section id="view-settings" hidden>
-      <h2 data-i18n="set.title">Settings</h2>
       <div class="panel">
         <label for="dirInput" data-i18n="set.dirLabel">ZCode data directory</label>
         <div class="row">
@@ -113,8 +111,12 @@
         <p id="backupsMsg" class="msg"></p>
       </div>
     </section>
-  </main>
 
+    <!-- help: full-window tab -->
+    <section id="view-help" hidden>
+      <div id="helpBody"></div>
+    </section>
+  </main>
   <footer>
     <span id="footerPath" class="muted"></span>
     <span class="grow"></span>
@@ -183,16 +185,6 @@
     </div>
     <div id="licensesBody" class="detail-body"></div>
   </dialog>
-
-  <!-- help -->
-  <dialog id="helpDlg" class="modal wide">
-    <div class="modal-head">
-      <h3 data-i18n="help.title">Help</h3>
-      <button class="icon-btn close-x" data-close="helpDlg">✕</button>
-    </div>
-    <div id="helpBody" class="detail-body"></div>
-  </dialog>
-
   <div id="toast" hidden></div>
 
   <script src="i18n.js"></script>
