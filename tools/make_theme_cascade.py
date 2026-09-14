@@ -1,13 +1,13 @@
 """Compose the three theme screenshots into an Aero-task-view style cascade.
 
 The front window (first input) sits centered; the other two stack behind it,
-stepping up-left, with rounded corners and soft shadows. The backdrop is a
-blurred, darkened copy of the front shot so the composition feels like a
-task-view scene rather than a collage.
+stepping up-left, with rounded corners and soft shadows. By default the
+canvas is fully transparent (RGBA PNG) so the composition adapts to any
+page background; pass --backdrop to get the blurred darkened scene instead.
 
 Usage:
     python tools/make_theme_cascade.py FRONT MID BACK --out OUT
-        [--step-x 76] [--step-y 58] [--radius 14] [--blur 28]
+        [--step-x 76] [--step-y 58] [--radius 14] [--backdrop] [--blur 28]
 """
 
 import argparse
@@ -43,6 +43,9 @@ def main():
     ap.add_argument("--step-x", type=int, default=76)
     ap.add_argument("--step-y", type=int, default=58)
     ap.add_argument("--radius", type=int, default=14)
+    ap.add_argument("--backdrop", action="store_true",
+                    help="place the cascade on a blurred darkened copy of the front shot "
+                         "instead of a transparent canvas")
     ap.add_argument("--blur", type=int, default=28)
     args = ap.parse_args()
 
@@ -54,11 +57,13 @@ def main():
     mx, my = args.step_x * 2 + 40, args.step_y * 2 + 46
     canvas_w, canvas_h = w + mx, h + my
 
-    # backdrop: blurred + darkened copy of the front shot
-    bg = front.convert("RGB").resize((canvas_w, canvas_h))
-    bg = bg.filter(ImageFilter.GaussianBlur(args.blur))
-    bg = ImageEnhance.Brightness(bg).enhance(0.42)
-    canvas = bg.convert("RGBA")
+    if args.backdrop:
+        bg = front.convert("RGB").resize((canvas_w, canvas_h))
+        bg = bg.filter(ImageFilter.GaussianBlur(args.blur))
+        bg = ImageEnhance.Brightness(bg).enhance(0.42)
+        canvas = bg.convert("RGBA")
+    else:
+        canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
 
     def paste_window(img, pos):
         canvas.alpha_composite(shadow_layer_for(img, args.radius, 14, 120, 16), pos)
@@ -68,8 +73,9 @@ def main():
     paste_window(mid, (args.step_x, args.step_y))
     paste_window(front, (args.step_x * 2, args.step_y * 2))
 
-    canvas.convert("RGB").save(args.out)
-    print(f"composed {args.out} ({canvas_w} x {canvas_h}, cascade step {args.step_x}x{args.step_y})")
+    canvas.save(args.out)
+    print(f"composed {args.out} ({canvas_w} x {canvas_h}, "
+          f"{'backdrop' if args.backdrop else 'transparent'}, step {args.step_x}x{args.step_y})")
 
 
 if __name__ == "__main__":
