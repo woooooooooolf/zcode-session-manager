@@ -1,7 +1,50 @@
 # Changelog
 
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
-The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.0.0`).
+The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.2.0`).
+
+## [1.2.0] - 2026-09-14
+<!-- zh -->
+**安全体系全面上线，界面细节打磨，依赖全面升级。**
+
+### 新增
+- 安全扫描体系：CodeQL 静态分析（每次推送 / PR / 每周定时）、Secret scanning 与推送保护、依赖审查（PR 引入漏洞依赖时检查失败）。
+- 依赖自动更新：Dependabot 每周检查 Cargo 与 GitHub Actions 依赖。
+- PR / Issue 模板：PR 自查清单（测试、构建、三主题、双语）与标准化 Issue 表单。
+- 帮助改为独立选项卡，全文窗口展示说明文字。
+
+### 调整
+- 状态横幅仅在会话列表页显示。
+- 设置页去除冗余标题，卡片更紧凑；空状态提示不再占用纵向空间。
+- 依赖升级：rusqlite 0.40（含新版 SQLite）、sysinfo 0.39、thiserror 2、dirs 6 及 GitHub Actions 组件更新。
+- README：标题统一为中文名、透明底三主题层叠主图（中英双语页面各自配图）。
+
+### 修复
+- 适配 sysinfo 0.39 的 OsStr API（进程探测已经运行时验证）。
+- 工作流补全 GITHUB_TOKEN 最小权限声明。
+<!-- en -->
+**Security tooling across the board, UI polish, and dependency upgrades.**
+
+### Added
+- Security scanning: CodeQL static analysis (every push / PR / weekly), secret scanning
+  with push protection, and dependency review that fails PRs introducing vulnerable packages.
+- Automatic dependency updates: Dependabot checks Cargo and GitHub Actions dependencies weekly.
+- PR / Issue templates: a self-check list (tests, build, three themes, both languages) and
+  structured issue forms.
+- Help moved to a dedicated full-window tab.
+
+### Changed
+- Status banners render on the sessions view only.
+- The Settings page dropped its redundant title and uses compact cards; empty status lines
+  no longer reserve vertical space.
+- Dependency upgrades: rusqlite 0.40 (with a newer SQLite), sysinfo 0.39, thiserror 2,
+  dirs 6, plus GitHub Actions component updates.
+- README: unified Chinese naming and a transparent three-theme cascade hero image
+  (per-language screenshots).
+
+### Fixed
+- Adapted to the sysinfo 0.39 OsStr API (process probe verified at runtime).
+- CI workflow now declares minimal GITHUB_TOKEN permissions.
 
 ## [1.1.0] - 2026-09-13
 <!-- zh -->
