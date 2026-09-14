@@ -1,0 +1,16 @@
+# PR 依赖审查：新增 / 变更的依赖存在已知漏洞或许可证问题时使检查失败
+name: Dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4

@@ -1,0 +1,42 @@
+# CodeQL 静态安全分析：Rust 代码（build-mode: none，无需完整编译）
+# 与 GitHub Actions 工作流（ubuntu，轻量）
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 2 * * 1"
+
+jobs:
+  analyze-rust:
+    name: Analyze (rust)
+    runs-on: windows-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+          build-mode: none
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:rust"
+
+  analyze-actions:
+    name: Analyze (actions)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: actions
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:actions"

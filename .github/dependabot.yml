@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Rust 依赖（workspace 根）
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor:
+        update-types:
+          - "minor"
+          - "patch"
+  # GitHub Actions（本目录下的工作流）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
