@@ -147,6 +147,9 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closePopovers();
 });
 
+// the WebView2 default context menu has no use in this app
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+
 function bindHeader() {
   // language: two options only, so the button simply toggles
   $("langBtn").addEventListener("click", () => switchLang(CURRENT_LANG === "zh" ? "en" : "zh"));
@@ -937,6 +940,22 @@ function parseChangelog(text) {
   return sections;
 }
 
+/// Append text to `parent` while rendering the small markdown subset used
+/// by the CHANGELOG: **bold** and `inline code` (built via DOM — no HTML).
+function appendInline(parent, text) {
+  const re = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const tok = m[0];
+    if (tok.startsWith("**")) parent.appendChild(el("strong", "", tok.slice(2, -2)));
+    else parent.appendChild(el("code", "inline-code", tok.slice(1, -1)));
+    last = m.index + tok.length;
+  }
+  if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+}
+
 async function openChangelog() {
   let text;
   try {
@@ -973,9 +992,13 @@ async function openChangelog() {
           list = el("ul", "about-list");
           body.appendChild(list);
         }
-        list.appendChild(el("li", "", line.replace(/^[-*]\s*/, "")));
+        const li = el("li");
+        appendInline(li, line.replace(/^[-*]\s*/, ""));
+        list.appendChild(li);
       } else if (!line.startsWith("#")) {
-        body.appendChild(el("p", "small", line));
+        const p = el("p", "small");
+        appendInline(p, line);
+        body.appendChild(p);
         list = null;
       }
     }

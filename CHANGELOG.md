@@ -3,6 +3,23 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.2.0`).
 
+## [Unreleased]
+<!-- zh -->
+### 调整
+- 状态横幅紧贴选项卡栏边界显示，且仅在会话列表页出现。
+- 帮助改为独立选项卡（原弹窗）。
+- 设置页去除冗余标题，卡片更紧凑。
+### 修复
+- 版本说明支持渲染行内 markdown（粗体与行内代码）。
+- 禁用窗口右键菜单（WebView2 默认菜单在本应用无实际用途）。
+<!-- en -->
+### Changed
+- Banners render flush against the tab bar and only on the sessions view; Help became a
+  full-window tab; the Settings page lost its redundant title and uses compact cards.
+### Fixed
+- Release notes render inline markdown (bold and inline code).
+- The WebView2 default context menu is disabled.
+
 ## [1.2.0] - 2026-09-14
 <!-- zh -->
 **安全体系全面上线，界面细节打磨，依赖全面升级。**
