@@ -1,9 +1,9 @@
 # Changelog
 
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
-The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.2.0`).
+The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
-## [Unreleased]
+## [1.3.0] - 2026-09-15
 <!-- zh -->
 ### 调整
 - 状态横幅紧贴选项卡栏边界显示，且仅在会话列表页出现。
