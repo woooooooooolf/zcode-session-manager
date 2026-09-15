@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 - 状态横幅紧贴选项卡栏边界显示，且仅在会话列表页出现。
 - 帮助改为独立选项卡（原弹窗）。
 - 设置页去除冗余标题，卡片更紧凑。
-- 会话表格改为固定比例列宽（纯 CSS），表头居中、排序箭头固定于列右缘；任何窗口宽度下都不出现水平滚动条。
+- 会话表格改为混合列宽（纯 CSS）：勾选 / 标记 / 更新时间 / 消息 / 占用 / 操作列按内容固定宽度，标题与项目列平分剩余空间随窗口伸缩；表头居中、排序箭头固定于列右缘；任何窗口宽度下都不出现水平滚动条。
 ### 修复
 - 表头列间分割线在首次打开时即显示（此前仅在点击排序后出现）。
 - 版本说明支持渲染行内 markdown（粗体与行内代码）。
@@ -18,9 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 ### Changed
 - Banners render flush against the tab bar and only on the sessions view; Help became a
   full-window tab; the Settings page lost its redundant title and uses compact cards.
-- The sessions table now uses fixed proportional column widths (pure CSS) with centered
-  headers and the sort arrow pinned to each column's right edge; no horizontal scrollbar
-  at any window size.
+- The sessions table now uses hybrid column widths (pure CSS): checkbox / badges /
+  updated / messages / size / actions are fixed to their content, while title and project
+  share the remaining space and flex with the window; headers are centered with the sort
+  arrow pinned to each column's right edge; no horizontal scrollbar at any window size.
 ### Fixed
 - Header separators are visible immediately on launch (previously they only appeared
   after clicking a header).
