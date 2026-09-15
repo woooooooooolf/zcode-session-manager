@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
 - 设置页去除冗余标题，卡片更紧凑。
 - 会话表格改为混合列宽（纯 CSS）：勾选 / 标记 / 更新时间 / 消息 / 占用 / 操作列按内容固定宽度，标题与项目列平分剩余空间随窗口伸缩；表头居中、排序箭头固定于列右缘；任何窗口宽度下都不出现水平滚动条。
 ### 修复
+- 滚动表格时整行表头固定在顶部（此前仅"标记""操作"两列残留、其余表头随内容滚走——排序箭头的 relative 定位覆盖了表头的 sticky）。
+- 同时持有多个标记（如"置顶"+"子会话"）的会话现在显示全部标记（此前标记列过窄导致第二个标记被静默裁剪）。
 - 表头列间分割线在首次打开时即显示（此前仅在点击排序后出现）。
 - 版本说明支持渲染行内 markdown（粗体与行内代码）。
 - 禁用窗口右键菜单（WebView2 默认菜单在本应用无实际用途）。
@@ -23,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
   share the remaining space and flex with the window; headers are centered with the sort
   arrow pinned to each column's right edge; no horizontal scrollbar at any window size.
 ### Fixed
+- The whole header row stays pinned while scrolling (previously only the 标记/操作
+  cells stuck — the sort arrow's relative positioning had overridden the headers'
+  sticky on sortable columns).
+- Sessions holding several badges (e.g. 置顶 + 子会话) show all of them (the badges
+  column was too narrow, silently clipping the second chip).
 - Header separators are visible immediately on launch (previously they only appeared
   after clicking a header).
 - Release notes render inline markdown (bold and inline code).

@@ -249,7 +249,7 @@ main {
 table { width: 100%; border-collapse: collapse; }
 /* fixed proportional layout: the table is always exactly the container's
    width — no horizontal scrollbar at any window size */
-#sessTable { table-layout: fixed; }
+#sessTable { table-layout: fixed; border-collapse: separate; border-spacing: 0; } /* separate borders stay attached to sticky th (Chromium drops collapsed ones) */
 #sessTable td, #sessTable th { overflow: hidden; text-overflow: ellipsis; }
 /* always-visible separators between header cells */
 #sessTable thead th + th { border-left: 1px solid var(--border); }
@@ -259,7 +259,7 @@ th { text-align: center; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--bg-hover); }
 th { font-size: 12px; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--bg-panel); }
-th.sortable { cursor: pointer; user-select: none; white-space: nowrap; position: relative; }
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; position: sticky; top: 0; }
 th.sortable:hover { color: var(--fg); }
 th .arrow { position: absolute; right: 6px; color: var(--accent); }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -267,7 +267,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .cell-title { min-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cell-title .title-text { overflow: hidden; text-overflow: ellipsis; }
 .tree-line { color: var(--muted); }
-.cell-flags { white-space: nowrap; }
+.cell-flags { white-space: normal; } /* chips wrap instead of being clipped */
 .cell-project { max-width: 240px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
 .col-check { width: 30px; }
 .col-actions { white-space: nowrap; }
