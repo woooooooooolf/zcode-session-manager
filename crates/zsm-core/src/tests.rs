@@ -36,6 +36,10 @@ CREATE TABLE session_task_link (id TEXT PRIMARY KEY, parent_session_id TEXT, chi
 CREATE TABLE workflow_run (id TEXT PRIMARY KEY, parent_session_id TEXT);
 CREATE TABLE workflow_event (id TEXT PRIMARY KEY, run_id TEXT);
 CREATE TABLE workflow_activity (id TEXT PRIMARY KEY, run_id TEXT);
+CREATE TABLE dwf_run (id TEXT PRIMARY KEY, parent_session_id TEXT);
+CREATE TABLE dwf_node (id INTEGER PRIMARY KEY, run_id TEXT);
+CREATE TABLE dwf_event (id INTEGER PRIMARY KEY, run_id TEXT);
+CREATE TABLE dwf_actor (id INTEGER PRIMARY KEY, run_id TEXT, session_id TEXT);
 CREATE TABLE permission (id TEXT PRIMARY KEY, project_id TEXT, data TEXT);
 ";
 
@@ -103,6 +107,14 @@ fn make_fixture() -> Fixture {
     con.execute("INSERT INTO workflow_run VALUES ('wr1', ?1)", [ROOT]).unwrap();
     con.execute("INSERT INTO workflow_event VALUES ('we1', 'wr1')", []).unwrap();
     con.execute("INSERT INTO workflow_activity VALUES ('wa1', 'wr1')", []).unwrap();
+    // dwf journal: dwf1 belongs to ROOT (actor names CHILD as its session);
+    // dwf2 belongs to KEEP and must survive a ROOT-tree delete untouched
+    con.execute("INSERT INTO dwf_run VALUES ('dwf1', ?1)", [ROOT]).unwrap();
+    con.execute("INSERT INTO dwf_node VALUES (1, 'dwf1')", []).unwrap();
+    con.execute("INSERT INTO dwf_event VALUES (1, 'dwf1')", []).unwrap();
+    con.execute("INSERT INTO dwf_actor VALUES (1, 'dwf1', ?1)", [CHILD]).unwrap();
+    con.execute("INSERT INTO dwf_run VALUES ('dwf2', ?1)", [KEEP]).unwrap();
+    con.execute("INSERT INTO dwf_actor VALUES (2, 'dwf2', ?1)", [KEEP]).unwrap();
     con.execute("INSERT INTO permission VALUES ('perm1', 'proj1', '{}')", []).unwrap();
     con.close().unwrap();
 
@@ -178,6 +190,8 @@ fn plan_delete_touches_nothing() {
     assert_eq!(plan.all_ids.len(), 2);
     assert_eq!(plan.counts.iter().find(|c| c.table == "message").unwrap().rows, 5);
     assert_eq!(plan.counts.iter().find(|c| c.table == "session").unwrap().rows, 2);
+    assert_eq!(plan.counts.iter().find(|c| c.table == "dwf_run").unwrap().rows, 1);
+    assert_eq!(plan.counts.iter().find(|c| c.table == "dwf_actor").unwrap().rows, 1);
     assert!(plan.disk_bytes > 0);
 
     // nothing changed
@@ -202,10 +216,17 @@ fn execute_delete_cascades_content_disk_index() {
     assert_eq!(deleted.iter().find(|c| c.table == "session").unwrap().rows, 2);
     assert_eq!(deleted.iter().find(|c| c.table == "session_task_link").unwrap().rows, 1);
     assert_eq!(deleted.iter().find(|c| c.table == "workflow_run").unwrap().rows, 1);
+    assert_eq!(deleted.iter().find(|c| c.table == "dwf_run").unwrap().rows, 1);
+    assert_eq!(deleted.iter().find(|c| c.table == "dwf_node").unwrap().rows, 1);
+    assert_eq!(deleted.iter().find(|c| c.table == "dwf_actor").unwrap().rows, 1);
 
     let con = Connection::open(fx.paths.db_path.clone()).unwrap();
     assert_eq!(count(&con, "SELECT COUNT(*) FROM session"), 1);
     assert_eq!(count(&con, "SELECT COUNT(*) FROM permission"), 1);
+    // dwf journal of the surviving session stays intact
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM dwf_run"), 1);
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM dwf_actor"), 1);
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM dwf_node"), 0);
     con.close().unwrap();
 
     // disk: root artifacts gone, keep's image-cache preserved

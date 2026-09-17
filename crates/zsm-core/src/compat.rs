@@ -103,6 +103,18 @@ fn check_content_db(con: &Connection, problems: &mut Vec<String>) {
             problems.push(format!("db.sqlite: `{t}` is missing column `session_id`"));
         }
     }
+    // dwf_* workflow journal (ZCode 0.16.5+): linked to sessions via
+    // dwf_run.parent_session_id and dwf_actor.session_id, children via run_id.
+    for (t, col) in [
+        ("dwf_run", "parent_session_id"),
+        ("dwf_actor", "session_id"),
+        ("dwf_node", "run_id"),
+        ("dwf_event", "run_id"),
+    ] {
+        if tables.contains(t) && !columns(con, t).contains(col) {
+            problems.push(format!("db.sqlite: `{t}` is missing column `{col}`"));
+        }
+    }
 }
 
 fn check_index_db(con: &Connection, problems: &mut Vec<String>) {

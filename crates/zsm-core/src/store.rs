@@ -453,6 +453,63 @@ impl Store {
                 }
             }
         }
+        if tables.contains("dwf_run") {
+            let sql = format!(
+                "SELECT id FROM dwf_run WHERE parent_session_id IN ({})",
+                qm(all_ids.len())
+            );
+            let dwf_ids: Vec<String> = con
+                .prepare(&sql)?
+                .query_map(params_from_iter(all_ids.iter()), |r| r.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !dwf_ids.is_empty() {
+                for t in ["dwf_node", "dwf_event"] {
+                    if tables.contains(t) {
+                        let sql = format!(
+                            "SELECT COUNT(*) FROM {t} WHERE run_id IN ({})",
+                            qm(dwf_ids.len())
+                        );
+                        let n =
+                            con.query_row(&sql, params_from_iter(dwf_ids.iter()), |r| r.get(0))?;
+                        counts.push(RowCount {
+                            table: t.to_string(),
+                            rows: n,
+                        });
+                    }
+                }
+                counts.push(RowCount {
+                    table: "dwf_run".into(),
+                    rows: dwf_ids.len() as i64,
+                });
+            }
+            if tables.contains("dwf_actor") {
+                // actors belong to a run but may also name their own session;
+                // count the union so the plan matches what deletion removes
+                let sql = if dwf_ids.is_empty() {
+                    format!(
+                        "SELECT COUNT(*) FROM dwf_actor WHERE session_id IN ({})",
+                        qm(all_ids.len())
+                    )
+                } else {
+                    format!(
+                        "SELECT COUNT(*) FROM dwf_actor WHERE run_id IN ({0}) \
+                         OR session_id IN ({1})",
+                        qm(dwf_ids.len()),
+                        qm(all_ids.len())
+                    )
+                };
+                let n = con.query_row(
+                    &sql,
+                    params_from_iter(dwf_ids.iter().chain(all_ids.iter())),
+                    |r| r.get(0),
+                )?;
+                counts.push(RowCount {
+                    table: "dwf_actor".into(),
+                    rows: n,
+                });
+            }
+        }
         {
             let sql = format!("SELECT COUNT(*) FROM session WHERE id IN ({})", qm(all_ids.len()));
             let n = con.query_row(&sql, params_from_iter(all_ids.iter()), |r| r.get(0))?;
@@ -780,6 +837,58 @@ impl Store {
                 let n = tx.execute(&sql, params_from_iter(run_ids.iter()))?;
                 out.push(RowCount {
                     table: "workflow_run".into(),
+                    rows: n as i64,
+                });
+            }
+        }
+        if tables.contains("dwf_run") {
+            let sql = format!(
+                "SELECT id FROM dwf_run WHERE parent_session_id IN ({})",
+                qm(ids.len())
+            );
+            let dwf_ids: Vec<String> = tx
+                .prepare(&sql)?
+                .query_map(params_from_iter(ids.iter()), |r| r.get(0))?
+                .filter_map(|r| r.ok())
+                .collect();
+            // children first so the order stays valid even with FKs enforced
+            if !dwf_ids.is_empty() {
+                for t in ["dwf_node", "dwf_event"] {
+                    if tables.contains(t) {
+                        let sql =
+                            format!("DELETE FROM {t} WHERE run_id IN ({})", qm(dwf_ids.len()));
+                        let n = tx.execute(&sql, params_from_iter(dwf_ids.iter()))?;
+                        out.push(RowCount {
+                            table: t.to_string(),
+                            rows: n as i64,
+                        });
+                    }
+                }
+            }
+            if tables.contains("dwf_actor") {
+                let sql = if dwf_ids.is_empty() {
+                    format!(
+                        "DELETE FROM dwf_actor WHERE session_id IN ({})",
+                        qm(ids.len())
+                    )
+                } else {
+                    format!(
+                        "DELETE FROM dwf_actor WHERE run_id IN ({0}) OR session_id IN ({1})",
+                        qm(dwf_ids.len()),
+                        qm(ids.len())
+                    )
+                };
+                let n = tx.execute(&sql, params_from_iter(dwf_ids.iter().chain(ids.iter())))?;
+                out.push(RowCount {
+                    table: "dwf_actor".into(),
+                    rows: n as i64,
+                });
+            }
+            if !dwf_ids.is_empty() {
+                let sql = format!("DELETE FROM dwf_run WHERE id IN ({})", qm(dwf_ids.len()));
+                let n = tx.execute(&sql, params_from_iter(dwf_ids.iter()))?;
+                out.push(RowCount {
+                    table: "dwf_run".into(),
                     rows: n as i64,
                 });
             }
