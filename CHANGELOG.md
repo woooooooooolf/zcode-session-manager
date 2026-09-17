@@ -3,6 +3,22 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [1.3.1] - 2026-09-17
+<!-- zh -->
+### 修复
+- 适配 ZCode 桌面版 3.11.2（内置引擎 0.16.5，数据库迁移 `0019_dwf_journal`）的本地数据结构变更：`db.sqlite` 新增了多智能体工作流日志表 `dwf_run` / `dwf_actor` / `dwf_node` / `dwf_event`，删除会话时现在会同步清理关联数据（经 `dwf_run.parent_session_id` 与 `dwf_actor.session_id` 级联），此前会残留孤儿行；兼容性校验也会检查这些表的关联列。
+- tasks-index 中三张表追加的 `model_selection` 列为纯增量变化，读写不受影响，无需额外适配。
+<!-- en -->
+### Fixed
+- Compatible with the ZCode 3.11.2 desktop release (bundled engine 0.16.5,
+  db migration `0019_dwf_journal`): `db.sqlite` gained the workflow-journal
+  tables `dwf_run` / `dwf_actor` / `dwf_node` / `dwf_event`.
+  Deleting a session now cascades into them (via `dwf_run.parent_session_id` and
+  `dwf_actor.session_id`); previously orphan rows would be left behind once the
+  feature is used. The compatibility check now validates their link columns too.
+- The appended `model_selection` columns in three tasks-index tables are additive
+  and need no adaptation.
+
 ## [1.3.0] - 2026-09-15
 <!-- zh -->
 ### 调整
