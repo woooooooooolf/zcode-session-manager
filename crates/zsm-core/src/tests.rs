@@ -451,3 +451,177 @@ fn refuse_and_full_mode_interplay() {
         )
         .is_ok());
 }
+
+// ---------------- privacy cleaner ----------------
+
+fn privacy_fixture() -> (PathBuf, crate::privacy::PrivacyPaths) {
+    let root = temp_dir();
+    let v2 = root.join("v2");
+    std::fs::create_dir_all(v2.join("checkpoints").join("abc123")).unwrap();
+    std::fs::create_dir_all(v2.join("logs")).unwrap();
+    std::fs::create_dir_all(v2.join("crash").join("live")).unwrap();
+    std::fs::create_dir_all(root.join("cli").join("log")).unwrap();
+    std::fs::write(v2.join("checkpoints").join("abc123").join("state.json"), "{}").unwrap();
+    std::fs::write(v2.join("telemetry-state.json"), "{\"deviceMid\":\"x\"}").unwrap();
+    std::fs::write(v2.join("logs").join("2026.log"), "log").unwrap();
+    std::fs::write(v2.join("crash").join("live").join("a.dmp"), "dump").unwrap();
+    std::fs::write(root.join("cli").join("log").join("zcode.jsonl"), "{}").unwrap();
+    std::fs::write(
+        v2.join("setting.json"),
+        r#"{"recentProjects":["D:\\proj"],"lastWorkspaceSession":[{"workspacePath":"D:\\proj"}],"locale":"zh-CN"}"#,
+    )
+    .unwrap();
+    // roaming / local desktop paths stay unwired so tests never touch real data
+    let paths = crate::privacy::PrivacyPaths {
+        zcode: Some(root.clone()),
+        roaming_zcode: None,
+        local_updater: None,
+    };
+    (root, paths)
+}
+
+#[test]
+fn privacy_scan_and_clean_roundtrip() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    crate::set_zcode_running_override(Some(false));
+    let (root, paths) = privacy_fixture();
+
+    let entries = crate::privacy::scan(&paths);
+    let by_id = |id: &str| entries.iter().find(|e| e.id == id).unwrap();
+    assert!(by_id("repo_snapshots").present);
+    assert_eq!(by_id("repo_snapshots").files, 1);
+    assert!(by_id("telemetry_state").present);
+    assert!(by_id("desktop_logs").present);
+    assert!(by_id("cli_logs").present);
+    assert!(by_id("crash_reports").present);
+    assert!(by_id("recent_projects").present, "{:?}", by_id("recent_projects"));
+    assert!(!by_id("browser_profile").present);
+    assert!(!by_id("updater_cache").present);
+
+    let ids: Vec<String> = ["repo_snapshots", "telemetry_state", "desktop_logs", "cli_logs", "crash_reports"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let report = crate::privacy::clean(&paths, &ids).unwrap();
+    assert!(report.outcomes.iter().all(|o| o.ok), "{:?}", report.outcomes);
+    // directory shells are kept, contents removed
+    assert!(root.join("v2/checkpoints").read_dir().unwrap().next().is_none());
+    assert!(root.join("v2/logs").read_dir().unwrap().next().is_none());
+    assert!(root.join("v2/crash").read_dir().unwrap().next().is_none());
+    assert!(!root.join("v2/telemetry-state.json").exists());
+}
+
+#[test]
+fn privacy_clean_refuses_while_zcode_runs() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    crate::set_zcode_running_override(Some(true));
+    let (_root, paths) = privacy_fixture();
+    assert!(matches!(
+        crate::privacy::clean(&paths, &["cli_logs".into()]),
+        Err(crate::Error::ZcodeRunning)
+    ));
+    assert!(matches!(
+        crate::privacy::apply_switches(&paths),
+        Err(crate::Error::ZcodeRunning)
+    ));
+    crate::set_zcode_running_override(Some(false));
+}
+
+#[test]
+fn privacy_recent_projects_and_switches() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    crate::set_zcode_running_override(Some(false));
+    let (root, paths) = privacy_fixture();
+
+    let report = crate::privacy::clean(&paths, &["recent_projects".into()]).unwrap();
+    assert!(report.outcomes[0].ok, "{:?}", report.outcomes);
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join("v2/setting.json")).unwrap()).unwrap();
+    assert_eq!(v["recentProjects"].as_array().unwrap().len(), 0);
+    assert_eq!(v["lastWorkspaceSession"].as_array().unwrap().len(), 0);
+    assert_eq!(v["locale"], "zh-CN"); // untouched keys survive
+
+    assert_eq!(crate::privacy::switches(&paths).optimize_agent_experience, None);
+    std::fs::write(
+        root.join("v2/setting.json"),
+        r#"{"optimizeAgentExperienceEnabled":true,"repoSnapshotIndexingEnabled":true}"#,
+    )
+    .unwrap();
+    let sw = crate::privacy::apply_switches(&paths).unwrap();
+    assert_eq!(sw.optimize_agent_experience, Some(false));
+    assert_eq!(sw.repo_snapshot_indexing, Some(false));
+    assert_eq!(sw.instant_grep_indexing, Some(false));
+}
+
+#[test]
+fn privacy_snapshot_report_parses_checkpoints() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let root = temp_dir();
+    let cp = root.join("v2").join("checkpoints").join("37107b86eb71");
+    std::fs::create_dir_all(cp.join("manifests")).unwrap();
+    std::fs::create_dir_all(cp.join("extra-manifests")).unwrap();
+    std::fs::write(
+        cp.join("state.json"),
+        r#"{"workspacePath":"D:\\ws","workspaceKey":"D:\\ws","lastCompressedSize":{"encryptedSizeBytes":77560,"workspaceSizeBytes":2264294,"manifestHash":"abc","recordedAt":1789654247740},"lastAcceptedManifestHash":"abc","failureCount":2}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cp.join("manifests").join("abc.json"),
+        r#"{"schema":"repo_snapshot_manifest/v2","workspaceKey":"D:\\ws","createdAt":1789654247740,"files":[{"path":".git/HEAD","sizeBytes":21},{"path":".git/config","sizeBytes":401},{"path":"src/main.rs","sizeBytes":500}]}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        cp.join("extra-manifests").join("3fb.json"),
+        r#"{"schema":"repo_snapshot_extra_manifest/v1","createdAt":1789654247740,"groups":[{"groupId":"global-configs","files":[{"path":"settings.behavior.json","sizeBytes":760}]}],"stats":{"includedFileCount":1,"includedBytes":760}}"#,
+    )
+    .unwrap();
+
+    let paths = crate::privacy::PrivacyPaths { zcode: Some(root.clone()), roaming_zcode: None, local_updater: None };
+    let reps = crate::privacy::snapshot_report(&paths);
+    assert_eq!(reps.len(), 1);
+    let r = &reps[0];
+    assert_eq!(r.workspace_path, "D:\\ws");
+    assert_eq!(r.recorded_at_ms, Some(1789654247740));
+    assert_eq!(r.workspace_bytes, Some(2264294));
+    assert_eq!(r.encrypted_bytes, Some(77560));
+    assert_eq!(r.accepted, Some(true));
+    assert_eq!(r.failure_count, Some(2));
+    assert!(r.manifest_on_disk);
+    assert_eq!(r.files.len(), 3);
+    assert_eq!(r.git_files, 2);
+    assert_eq!(r.files_bytes, 21 + 401 + 500);
+    assert_eq!(r.extra_files, 1);
+    assert_eq!(r.extra_bytes, 760);
+    assert!(r.state_modified_ms.is_some());
+}
+
+#[test]
+fn privacy_discover_rejects_non_zcode_dirs() {
+    // a random folder must never expose cli/* or v2/* paths for cleaning
+    let empty = temp_dir();
+    let p = crate::privacy::PrivacyPaths::discover(Some(&empty));
+    assert!(p.zcode.is_none());
+
+    let real = temp_dir();
+    std::fs::create_dir_all(real.join("v2")).unwrap();
+    std::fs::write(real.join("v2").join("tasks-index.sqlite"), "x").unwrap();
+    let p2 = crate::privacy::PrivacyPaths::discover(Some(&real));
+    assert!(p2.zcode.is_some());
+}
+
+#[test]
+fn privacy_clean_ignores_unknown_ids() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    crate::set_zcode_running_override(Some(false));
+    let (root, paths) = privacy_fixture();
+    let report = crate::privacy::clean(
+        &paths,
+        &["../../secrets".into(), "sessions_db".into(), "".into()],
+    )
+    .unwrap();
+    assert!(report.outcomes.is_empty());
+    // nothing at all was touched
+    assert!(root.join("v2/setting.json").is_file());
+    assert!(root.join("v2/telemetry-state.json").is_file());
+    assert!(root.join("cli/log/zcode.jsonl").is_file());
+}

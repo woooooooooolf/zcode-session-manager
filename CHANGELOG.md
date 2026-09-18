@@ -3,6 +3,53 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [1.4.0] - 2026-09-18
+<!-- zh -->
+### 新增
+- 新增第二个选项卡 **隐私清理**：盘点并清理 ZCode 保存在会话数据库之外的用户数据。背景：2026-09-18 曝光 ZCode 的“代码库索引 / Repo Wiki”功能会把整个工作区（含全量 `.git` 历史）打包加密上传云端（智谱已致歉称修复）。本功能清理的是本地痕迹。
+  - 可清理类别（可勾选，支持按类别展示大小 / 文件数 / 涉及路径）：工作区快照记录（`v2\checkpoints\`）、遥测设备标识（`telemetry-state.json`、`zcode-data-size-telemetry.json`、`rum-electron-store\`）、桌面日志（`v2\logs\`）、CLI 日志（`cli\log\`）、崩溃转储（`v2\crash\`）、内置浏览器档案（`%APPDATA%\ZCode\session\`，默认不勾选、清理后需重新登录）、最近项目记录（仅清空 `v2\setting.json` 的 `recentProjects` / `lastWorkspaceSession`，其余键保留）、更新缓存（`@zcodedesktop-updater\`）、智能体长期记忆（`cli\memories\`，默认不勾选）。
+  - 清理目录类数据时保留目录本身只删内容；ZCode 运行中一律拒绝执行（与删除会话同一守卫）；缓存 / 日志不创建备份。
+  - **上传相关开关加固**：把 `v2\setting.json` 中的 `optimizeAgentExperienceEnabled` / `repoSnapshotIndexingEnabled` / `instantGrepIndexingEnabled` 读写展示并支持一键强制关闭（需退出 ZCode 后写入）。
+  - **隐私报告**：弹窗 + 表格展示“哪些工作区 / 文件被打包上传过”——快照时间、工作区与加密包大小、manifest 文件总数与 `.git` 文件数、服务器是否已接受、失败重试次数、额外配置文件，以及每个工作区的完整打包文件清单；支持保存为 CSV（UTF-8 带 BOM，Excel 可直接打开）。
+### 修复
+- 隐私清理页的警告横幅与会话列表页样式一致（紧贴选项卡栏下边界、全窗口宽度）。
+- 隐私清理页在窗口较小时出现垂直滚动条（横幅固定、面板区域滚动）。
+- 隐私清理的保守性加固：清理范围仅限会话数据库之外的数据，完全不读写 `db.sqlite` / `tasks-index.sqlite` 与 rollout / exec / artifacts 等会话磁盘数据；数据目录必须先通过 ZCode 结构校验（含 `cli/db/db.sqlite` 或 `v2/tasks-index.sqlite`）才会纳入清理，配置错误时宁可不清；清理类别按白名单过滤，任何未知标识符都不会被当作路径处理。帮助与关于页补充隐私清理 / 隐私报告的说明。
+<!-- en -->
+### Added
+- New second tab **Privacy**: inventories and cleans the user data ZCode keeps
+  outside the session databases. Context: on 2026-09-18 ZCode was reported to
+  package and upload whole workspaces (including the full `.git` history) via
+  its "repo indexing / Repo Wiki" feature; Zhipu apologized and claims it is
+  fixed. This feature cleans the local traces.
+  - Selectable categories with size / file count / locations: workspace
+    snapshot records (`v2\checkpoints\`), telemetry device ids
+    (`telemetry-state.json`, `zcode-data-size-telemetry.json`,
+    `rum-electron-store\`), desktop logs (`v2\logs\`), CLI logs (`cli\log\`),
+    crash dumps (`v2\crash\`), embedded browser profile
+    (`%APPDATA%\ZCode\session\`; unchecked by default, logs you out), the
+    recent-project list (clears only `recentProjects` / `lastWorkspaceSession`
+    in `v2\setting.json`, other keys preserved), the updater cache
+    (`@zcodedesktop-updater\`) and the agent long-term memory
+    (`cli\memories\`, unchecked by default).
+  - Directory targets keep the folder shell and remove only the contents;
+    cleaning is refused while ZCode runs (same guard as session deletion);
+    caches / logs are deleted without a backup.
+  - **Upload-related switches (hardening)**: shows and force-disables
+    `optimizeAgentExperienceEnabled` / `repoSnapshotIndexingEnabled` /
+    `instantGrepIndexingEnabled` in `v2\setting.json` (write requires ZCode
+    to be closed).
+  - **Privacy report**: dialog + table showing which workspaces / files were
+    packaged for upload — snapshot time, workspace and encrypted sizes,
+    manifest file counts incl. `.git` files, server-accepted flag, failed
+    retry counts, extra config files, plus the full packaged file list per
+    workspace; exportable as CSV (UTF-8 with BOM, opens in Excel).
+### Fixed
+- The Privacy tab's warning banner now matches the Sessions tab (flush
+  against the tab-bar bottom edge, full window width).
+- The Privacy tab gets a vertical scrollbar when the window is small (the
+  banner stays pinned; the panel column scrolls).
+
 ## [1.3.1] - 2026-09-17
 <!-- zh -->
 ### 修复

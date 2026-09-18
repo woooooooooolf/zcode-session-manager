@@ -10,6 +10,7 @@ use settings::{Settings, SettingsStore};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use zsm_core::privacy::{self, CleanReport, PrivacyEntry, PrivacyPaths, PrivacySwitches, SnapshotReport};
 use zsm_core::{CompatReport, DeletePlan, DeleteResult, Paths, SessionDetail, SessionSummary, Store};
 
 #[derive(Clone)]
@@ -395,6 +396,118 @@ fn is_zcode_running() -> bool {
     zsm_core::zcode_running()
 }
 
+// ---------------- privacy cleaner ----------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyScanOut {
+    pub zcode_running: bool,
+    pub zcode_dir: Option<String>,
+    pub entries: Vec<PrivacyEntry>,
+    pub switches: PrivacySwitches,
+}
+
+/// The privacy cleaner also covers desktop-app caches that live outside the
+/// configured data dir, so it does not require `looks_valid` like `store()`.
+fn privacy_paths(mgr: &AppMgr) -> PrivacyPaths {
+    let dir = mgr
+        .settings()
+        .zcode_dir
+        .map(std::path::PathBuf::from)
+        .or_else(|| Paths::default_zcode_dir());
+    PrivacyPaths::discover(dir.as_deref())
+}
+
+#[tauri::command]
+async fn privacy_scan(mgr: State<'_, AppMgr>) -> Result<PrivacyScanOut, ApiError> {
+    let mgr = mgr.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = privacy_paths(&mgr);
+        Ok(PrivacyScanOut {
+            zcode_running: zsm_core::zcode_running(),
+            zcode_dir: p.zcode.as_ref().map(|z| z.to_string_lossy().to_string()),
+            entries: privacy::scan(&p),
+            switches: privacy::switches(&p),
+        })
+    })
+    .await
+    .map_err(|e| ApiError::simple("join", &e.to_string()))?
+}
+
+#[tauri::command]
+async fn privacy_clean(ids: Vec<String>, mgr: State<'_, AppMgr>) -> Result<CleanReport, ApiError> {
+    let mgr = mgr.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        privacy::clean(&privacy_paths(&mgr), &ids).map_err(ApiError::from)
+    })
+    .await
+    .map_err(|e| ApiError::simple("join", &e.to_string()))?
+}
+
+#[tauri::command]
+async fn privacy_switches_apply(mgr: State<'_, AppMgr>) -> Result<PrivacySwitches, ApiError> {
+    let mgr = mgr.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        privacy::apply_switches(&privacy_paths(&mgr)).map_err(ApiError::from)
+    })
+    .await
+    .map_err(|e| ApiError::simple("join", &e.to_string()))?
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyReportOut {
+    pub generated_at_ms: u64,
+    pub zcode_dir: Option<String>,
+    pub snapshots: Vec<SnapshotReport>,
+}
+
+/// Upload-evidence report rebuilt from the checkpoint state/manifests.
+#[tauri::command]
+async fn privacy_report(mgr: State<'_, AppMgr>) -> Result<PrivacyReportOut, ApiError> {
+    let mgr = mgr.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = privacy_paths(&mgr);
+        Ok(PrivacyReportOut {
+            generated_at_ms: now_ms(),
+            zcode_dir: p.zcode.as_ref().map(|z| z.to_string_lossy().to_string()),
+            snapshots: privacy::snapshot_report(&p),
+        })
+    })
+    .await
+    .map_err(|e| ApiError::simple("join", &e.to_string()))?
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Ask for a CSV destination and write the report text the frontend built
+/// (UTF-8 with BOM so Excel opens Chinese correctly). None = user canceled.
+#[tauri::command]
+async fn privacy_save_report(app: AppHandle, csv: String) -> Result<Option<String>, ApiError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let picked = app
+            .dialog()
+            .file()
+            .add_filter("CSV", &["csv"])
+            .set_file_name(format!("zcode-privacy-report-{stamp}.csv"))
+            .blocking_save_file();
+        let Some(dest) = picked else { return Ok(None) };
+        let path = dest.into_path().map_err(|e| ApiError::simple("io", &e.to_string()))?;
+        let mut bytes = vec![0xEF, 0xBB, 0xBF]; // UTF-8 BOM
+        bytes.extend_from_slice(csv.as_bytes());
+        std::fs::write(&path, bytes).map_err(|e| ApiError::simple("io", &e.to_string()))?;
+        Ok(Some(path.to_string_lossy().to_string()))
+    })
+    .await
+    .map_err(|e| ApiError::simple("join", &e.to_string()))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -415,6 +528,11 @@ pub fn run() {
             session_detail,
             delete_plan,
             delete_execute,
+            privacy_scan,
+            privacy_clean,
+            privacy_switches_apply,
+            privacy_report,
+            privacy_save_report,
             pick_folder,
             reveal_path,
             third_party,

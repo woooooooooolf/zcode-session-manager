@@ -24,6 +24,10 @@ let SESSIONS = [];
 let SELECTED = new Set();
 let LAST_RESULT = null; // backup dir of the last delete, for "open folder"
 let SCAN_ERROR = null;
+let PRIVACY = null; // privacy_scan payload (entries, switches)
+let PRIVACY_SEL = new Set();
+const PRIVACY_OFF_BY_DEFAULT = new Set(["browser_profile", "agent_memories"]); // destructive side effects
+let PRIVACY_SCANNED = false;
 let FILTER = new Set(); // categories: active/archived/pinned/child/ghost (empty = all)
 let SORT = { key: "updated", dir: "desc" };
 const DEFAULT_DIR = { title: "asc", project: "asc", updated: "desc", messages: "desc", size: "desc" };
@@ -43,7 +47,7 @@ function errText(e) {
   const code = typeof e === "object" && e && e.code ? e.code : "other";
   const known = [
     "zcode_running", "limited_mode", "compat", "corruption", "invalid_dir", "db_not_found",
-    "detect_failed", "io", "sqlite", "other", "no_dir", "no_backend",
+    "detect_failed", "io", "sqlite", "json", "other", "no_dir", "no_backend",
   ];
   const key = known.includes(code) ? `err.${code}` : "err.other";
   const detail = typeof e === "object" && e && e.message ? e.message : String(e);
@@ -116,6 +120,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindToolbar();
   bindSortHeaders();
   bindSettings();
+  bindPrivacy();
   bindDialogs();
   startPolling();
 
@@ -195,6 +200,7 @@ async function switchLang(lang) {
   renderHelp();
   renderFilterGroup();
   renderTable();
+  renderPrivacy();
   // dynamically generated chrome must follow the language too
   renderBanners();
   renderFooter();
@@ -224,6 +230,12 @@ function startPolling() {
         renderBanners();
         renderTable();
       }
+      if (PRIVACY && running !== PRIVACY.zcodeRunning) {
+        PRIVACY.zcodeRunning = running;
+        renderPrivacyBanners();
+        updatePrivacySelInfo();
+        renderPrivacySwitches();
+      }
     } catch {
       /* transient probe failure — keep previous state */
     }
@@ -234,17 +246,20 @@ function startPolling() {
 
 function bindTabs() {
   $("tab-sessions").addEventListener("click", () => switchTab("sessions"));
+  $("tab-privacy").addEventListener("click", () => switchTab("privacy"));
   $("tab-settings").addEventListener("click", () => switchTab("settings"));
   $("tab-help").addEventListener("click", () => switchTab("help"));
 }
 
 function switchTab(name) {
   $("view-sessions").hidden = name !== "sessions";
+  $("view-privacy").hidden = name !== "privacy";
   $("view-settings").hidden = name !== "settings";
   $("view-help").hidden = name !== "help";
-  ["sessions", "settings", "help"].forEach(
+  ["sessions", "privacy", "settings", "help"].forEach(
     (t) => $(`tab-${t}`).classList.toggle("active", t === name)
   );
+  if (name === "privacy" && !PRIVACY_SCANNED) scanPrivacy();
 }
 
 // ---------- data refresh ----------
@@ -631,6 +646,7 @@ async function openDeleteDialog(ids) {
     toast(STATE && STATE.zcodeRunning ? t("banner.limited", { n: fmtDuration(60) }) : t("banner.compat"));
     return;
   }
+  $("confirmTitle").textContent = t("del.title");
   let plan;
   try {
     plan = await invoke("delete_plan", { ids });
@@ -876,6 +892,336 @@ function bindSettings() {
   $("resetBackupsBtn").addEventListener("click", () => saveBackupsDir(""));
 }
 
+// ---------- privacy cleaner ----------
+
+async function scanPrivacy() {
+  let out;
+  try {
+    out = await invoke("privacy_scan");
+  } catch (e) {
+    PRIVACY = null;
+    PRIVACY_SCANNED = true;
+    renderPrivacy();
+    toast(errText(e));
+    return;
+  }
+  const first = !PRIVACY_SCANNED;
+  PRIVACY = out;
+  PRIVACY_SCANNED = true;
+  if (first) {
+    PRIVACY_SEL = new Set(
+      out.entries.filter((e) => e.present && !PRIVACY_OFF_BY_DEFAULT.has(e.id)).map((e) => e.id)
+    );
+  }
+  hidePrivacyMsg();
+  renderPrivacy();
+}
+
+function renderPrivacyBanners() {
+  const box = $("privacyBanners");
+  if (!box) return;
+  box.textContent = "";
+  if (!PRIVACY) {
+    box.appendChild(el("div", "banner warn", t("privacy.scanFailed")));
+    return;
+  }
+  if (PRIVACY.zcodeRunning) {
+    box.appendChild(el("div", "banner warn", t("privacy.running")));
+  }
+}
+
+function renderPrivacy() {
+  renderPrivacyBanners();
+  const body = $("privacyBody");
+  if (!body) return;
+  body.textContent = "";
+  if (!PRIVACY) return;
+
+  for (const e of PRIVACY.entries) {
+    const tr = el("tr");
+
+    const tdCheck = el("td", "col-check");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = PRIVACY_SEL.has(e.id);
+    cb.disabled = !e.present;
+    cb.addEventListener("change", () => {
+      if (cb.checked) PRIVACY_SEL.add(e.id);
+      else PRIVACY_SEL.delete(e.id);
+      updatePrivacySelInfo();
+    });
+    tdCheck.appendChild(cb);
+    tr.appendChild(tdCheck);
+
+    const tdCat = el("td", "cell-title");
+    tdCat.appendChild(el("span", "title-text", t(`privacy.cat.${e.id}`)));
+    if (!e.present) tdCat.appendChild(el("span", "muted small", ` (${t("privacy.absent")})`));
+    tdCat.appendChild(el("div", "muted small", t(`privacy.cat.${e.id}.desc`)));
+    const det = el("details", "privacy-paths");
+    det.appendChild(el("summary", "", t("privacy.paths")));
+    for (const p of e.paths) det.appendChild(el("div", "small path-text", p));
+    tdCat.appendChild(det);
+    tr.appendChild(tdCat);
+
+    const risk = { high: "risk-high", medium: "risk-medium", low: "risk-low" }[e.risk] || "risk-low";
+    tr.appendChild(el("td", "", "")).appendChild(el("span", `badge ${risk}`, t(`privacy.risk.${e.risk}`)));
+
+    tr.appendChild(el("td", "num", e.present ? fmtBytes(e.bytes) : "-"));
+    tr.appendChild(el("td", "num", e.present ? String(e.files) : "-"));
+
+    body.appendChild(tr);
+  }
+  renderPrivacySwitches();
+  updatePrivacySelInfo();
+}
+
+function updatePrivacySelInfo() {
+  if (!PRIVACY) return;
+  const sel = PRIVACY.entries.filter((e) => PRIVACY_SEL.has(e.id));
+  const bytes = sel.reduce((a, e) => a + (e.bytes || 0), 0);
+  $("privacySelInfo").textContent = sel.length ? t("privacy.selInfo", { n: sel.length, size: fmtBytes(bytes) }) : "";
+  $("privacyCleanBtn").disabled = !sel.length || PRIVACY.zcodeRunning;
+}
+
+const PRIVACY_SWITCHES = [
+  { key: "optimizeAgentExperience", label: "privacy.swOptimize" },
+  { key: "repoSnapshotIndexing", label: "privacy.swRepoSnapshot" },
+  { key: "instantGrepIndexing", label: "privacy.swInstantGrep" },
+];
+
+function renderPrivacySwitches() {
+  const box = $("privacySwitches");
+  if (!box || !PRIVACY) return;
+  box.textContent = "";
+  const sw = PRIVACY.switches;
+  let allOff = !!sw.settingPath;
+  for (const s of PRIVACY_SWITCHES) {
+    const row = el("div", "privacy-sw-row");
+    row.appendChild(el("span", "privacy-sw-name", t(s.label)));
+    const on = sw[s.key] === true || sw[s.key] === undefined || sw[s.key] === null;
+    if (on) allOff = false;
+    row.appendChild(el("span", `badge ${on ? "risk-high" : "risk-low"}`, on ? t("privacy.swOn") : t("privacy.swOff")));
+    box.appendChild(row);
+  }
+  $("privacySwBtn").disabled = !sw.settingPath || allOff || PRIVACY.zcodeRunning;
+}
+
+function showPrivacyMsg(text, cls) {
+  const p = $("privacyMsg");
+  p.textContent = text;
+  p.className = cls ? `msg ${cls}` : "msg";
+  p.hidden = false;
+}
+function hidePrivacyMsg() {
+  const p = $("privacyMsg");
+  if (p) p.hidden = true;
+}
+function showPrivacySwMsg(text) {
+  const p = $("privacySwMsg");
+  p.textContent = text;
+  p.hidden = false;
+}
+
+function bindPrivacy() {
+  $("privacyRefreshBtn").addEventListener("click", scanPrivacy);
+  $("privacyReportBtn").addEventListener("click", openPrivacyReport);
+  $("privacyCleanBtn").addEventListener("click", openPrivacyClean);
+  $("reportCloseBtn").addEventListener("click", () => $("reportDlg").close());
+  $("reportSaveBtn").addEventListener("click", savePrivacyReportCsv);
+  $("privacySwBtn").addEventListener("click", async () => {
+    try {
+      PRIVACY.switches = await invoke("privacy_switches_apply");
+      showPrivacySwMsg(t("privacy.swDone"));
+      renderPrivacySwitches();
+    } catch (e) {
+      showPrivacySwMsg(errText(e));
+    }
+  });
+}
+
+async function openPrivacyClean() {
+  const ids = PRIVACY.entries.filter((e) => PRIVACY_SEL.has(e.id)).map((e) => e.id);
+  if (!ids.length) return;
+  const body = $("confirmBody");
+  body.textContent = "";
+  $("confirmTitle").textContent = t("privacy.confirmTitle");
+  body.appendChild(el("p", "", t("privacy.confirmIntro")));
+  const list = el("ul", "plan-list");
+  for (const e of PRIVACY.entries) {
+    if (!ids.includes(e.id)) continue;
+    const li = el("li", "", `${t(`privacy.cat.${e.id}`)} — ${fmtBytes(e.bytes)}`);
+    list.appendChild(li);
+  }
+  body.appendChild(list);
+  if (ids.includes("browser_profile")) {
+    body.appendChild(el("p", "restore-warn", t("privacy.warnLogout")));
+  }
+  if (ids.includes("agent_memories")) {
+    body.appendChild(el("p", "restore-warn", t("privacy.warnMemories")));
+  }
+  body.appendChild(el("p", "backup-note", t("privacy.noBackupNote")));
+
+  $("confirmGo").disabled = false;
+  $("confirmGo").textContent = t("privacy.cleanGo");
+  $("confirmGo").onclick = async () => {
+    $("confirmGo").disabled = true;
+    $("confirmGo").textContent = t("privacy.cleaning");
+    $("confirmDlg").close();
+    await executePrivacyClean(ids);
+  };
+  $("confirmDlg").showModal();
+}
+
+async function executePrivacyClean(ids) {
+  let res;
+  try {
+    res = await invoke("privacy_clean", { ids });
+  } catch (e) {
+    toast(errText(e));
+    return;
+  }
+  const errs = res.outcomes.flatMap((o) => o.errors || []);
+  const head = t("privacy.cleanDone", { size: fmtBytes(res.totalBytes), n: res.totalFiles });
+  showPrivacyMsg(errs.length ? `${head}\n${t("privacy.cleanErrors")}\n${errs.join("\n")}` : head, errs.length ? "restore-warn" : "integrity-ok");
+  await scanPrivacy();
+}
+
+// ---------- privacy report (workspace upload evidence) ----------
+
+let PRIVACY_REPORT = null; // last report payload, kept for CSV saving
+
+async function openPrivacyReport() {
+  let rep;
+  try {
+    rep = await invoke("privacy_report");
+  } catch (e) {
+    toast(errText(e));
+    return;
+  }
+  PRIVACY_REPORT = rep;
+  const body = $("reportBody");
+  body.textContent = "";
+  body.appendChild(
+    el("p", "muted small", `${t("privacy.reportGenerated")}: ${fmtTime(rep.generatedAtMs)}${rep.zcodeDir ? ` · ${rep.zcodeDir}` : ""}`)
+  );
+  if (!rep.snapshots.length) {
+    body.appendChild(el("p", "", t("privacy.reportEmpty")));
+    $("reportDlg").showModal();
+    return;
+  }
+
+  const totalEnc = rep.snapshots.reduce((a, s) => a + (s.encryptedBytes || 0), 0);
+  const acceptedN = rep.snapshots.filter((s) => s.accepted === true).length;
+  const fails = rep.snapshots.reduce((a, s) => a + (s.failureCount || 0), 0);
+  const times = rep.snapshots.map((s) => s.recordedAtMs).filter(Boolean);
+  body.appendChild(
+    el("p", "", t("privacy.reportSummary", {
+      n: rep.snapshots.length,
+      size: fmtBytes(totalEnc),
+      a: acceptedN,
+      f: fails,
+      first: times.length ? fmtTime(Math.min(...times)) : "-",
+      last: times.length ? fmtTime(Math.max(...times)) : "-",
+    }))
+  );
+
+  const tbl = el("table", "report-table license-table");
+  const thead = el("thead");
+  const hr = el("tr");
+  for (const k of ["reportColWs", "reportColTime", "reportColWsSize", "reportColEnc", "reportColFiles", "reportColAccepted", "reportColFails"]) {
+    hr.appendChild(el("th", "", t(`privacy.${k}`)));
+  }
+  thead.appendChild(hr);
+  tbl.appendChild(thead);
+  const tbody = el("tbody");
+  for (const s of rep.snapshots) {
+    const tr = el("tr");
+    tr.appendChild(el("td", "cell-ws", s.workspacePath || s.checkpointDir));
+    tr.appendChild(el("td", "", s.recordedAtMs ? fmtTime(s.recordedAtMs) : "-"));
+    tr.appendChild(el("td", "", s.workspaceBytes != null ? fmtBytes(s.workspaceBytes) : "-"));
+    tr.appendChild(el("td", "", s.encryptedBytes != null ? fmtBytes(s.encryptedBytes) : "-"));
+    tr.appendChild(el("td", "", s.manifestOnDisk ? `${s.files.length} (.git ${s.gitFiles})` : "-"));
+    const acc = s.accepted === true ? t("privacy.reportYes") : s.accepted === false ? t("privacy.reportNo") : t("privacy.reportUnknown");
+    tr.appendChild(el("td", s.accepted === true ? "integrity-ok" : "", acc));
+    tr.appendChild(el("td", "", s.failureCount != null ? String(s.failureCount) : "-"));
+    tbody.appendChild(tr);
+  }
+  tbl.appendChild(tbody);
+  body.appendChild(tbl);
+
+  if (rep.snapshots.some((s) => s.manifestOnDisk && s.files.length)) {
+    body.appendChild(el("h5", "cl-sub", t("privacy.reportFilesTitle")));
+    const CAP = 2000;
+    for (const s of rep.snapshots) {
+      if (!s.manifestOnDisk || !s.files.length) continue;
+      const det = el("details", "report-block");
+      const extra = s.extraFiles ? ` + ${s.extraFiles} ${t("privacy.reportExtra")}` : "";
+      det.appendChild(
+        el("summary", "", `${s.workspacePath || s.checkpointDir} — ${s.files.length} ${t("privacy.colFiles")} (${fmtBytes(s.filesBytes)}${extra})`)
+      );
+      const ul = el("ul", "report-file-list");
+      for (const f of s.files.slice(0, CAP)) ul.appendChild(el("li", "", `${f.path} (${f.sizeBytes})`));
+      if (s.files.length > CAP) ul.appendChild(el("li", "muted", `… +${s.files.length - CAP}`));
+      det.appendChild(ul);
+      body.appendChild(det);
+    }
+  }
+
+  $("reportDlg").showModal();
+}
+
+function csvField(v) {
+  const s = String(v === null || v === undefined ? "" : v);
+  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+}
+
+function buildPrivacyCsv(rep) {
+  const L = [];
+  L.push(csvField(t("privacy.reportTitle")));
+  L.push(csvField(t("privacy.reportNote")));
+  L.push(`${csvField(t("privacy.reportGenerated"))},${csvField(new Date(rep.generatedAtMs).toISOString())}`);
+  if (rep.zcodeDir) L.push(`${csvField(t("privacy.reportDir"))},${csvField(rep.zcodeDir)}`);
+  L.push("");
+  L.push(csvField(t("privacy.reportSection1")));
+  L.push(["workspace", "recorded_at", "state_modified", "workspace_bytes", "encrypted_bytes", "files_total", "files_git", "extra_files", "extra_bytes", "failures", "accepted", "manifest_on_disk", "manifest_hash"].map(csvField).join(","));
+  for (const s of rep.snapshots) {
+    L.push([
+      s.workspacePath || s.checkpointDir,
+      s.recordedAtMs ? new Date(s.recordedAtMs).toISOString() : "",
+      s.stateModifiedMs ? new Date(s.stateModifiedMs).toISOString() : "",
+      s.workspaceBytes ?? "",
+      s.encryptedBytes ?? "",
+      s.manifestOnDisk ? s.files.length : "",
+      s.manifestOnDisk ? s.gitFiles : "",
+      s.extraFiles,
+      s.extraBytes,
+      s.failureCount ?? "",
+      s.accepted === true ? "yes" : s.accepted === false ? "no" : "unknown",
+      s.manifestOnDisk ? "yes" : "no",
+      s.manifestHash || "",
+    ].map(csvField).join(","));
+  }
+  L.push("");
+  L.push(csvField(t("privacy.reportSection2")));
+  L.push(["workspace", "file_path", "size_bytes"].map(csvField).join(","));
+  for (const s of rep.snapshots) {
+    for (const f of s.files) {
+      L.push([s.workspacePath || s.checkpointDir, f.path, f.sizeBytes].map(csvField).join(","));
+    }
+  }
+  return `${L.join("\r\n")}\r\n`;
+}
+
+async function savePrivacyReportCsv() {
+  if (!PRIVACY_REPORT) return;
+  try {
+    const saved = await invoke("privacy_save_report", { csv: buildPrivacyCsv(PRIVACY_REPORT) });
+    if (saved) toast(t("privacy.reportSaved", { path: saved }));
+  } catch (e) {
+    toast(errText(e));
+  }
+}
+
 // ---------- about card + changelog + licenses ----------
 
 function renderAbout() {
@@ -1069,9 +1415,13 @@ function renderHelp() {
   const ul3 = el("ul", "about-list");
   for (const k of ["help.data1", "help.data2"]) ul3.appendChild(el("li", "", t(k)));
   body.appendChild(ul3);
+  body.appendChild(el("h4", "", t("help.privacyTitle")));
+  const ul5 = el("ul", "about-list");
+  for (const k of ["help.privacy1", "help.privacy2", "help.privacy3", "help.privacy4"]) ul5.appendChild(el("li", "", t(k)));
+  body.appendChild(ul5);
   body.appendChild(el("h4", "", t("help.layoutTitle")));
   const ul4 = el("ul", "about-list");
-  for (const k of ["about.l1", "about.l2", "about.l3", "about.l4", "about.l5"]) {
+  for (const k of ["about.l1", "about.l2", "about.l3", "about.l4", "about.l5", "about.l6"]) {
     ul4.appendChild(el("li", "", t(k)));
   }
   body.appendChild(ul4);

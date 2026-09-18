@@ -9,6 +9,7 @@
 <body>
   <nav class="tabs">
     <button id="tab-sessions" class="tab active" data-i18n="tab.sessions">Sessions</button>
+    <button id="tab-privacy" class="tab" data-i18n="tab.privacy">Privacy</button>
     <button id="tab-settings" class="tab" data-i18n="tab.settings">Settings</button>
     <button id="tab-help" class="tab" data-i18n="help.title">Help</button>
     <span class="grow"></span>
@@ -61,6 +62,48 @@
         </div>
         <div id="errorState" class="empty" hidden>
           <p id="errorStateMsg"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- privacy cleaner: second tab -->
+    <section id="view-privacy" hidden>
+      <div id="privacyBanners"></div>
+      <div id="privacyContent">
+        <div class="panel">
+          <label data-i18n="privacy.title">Privacy cleaner</label>
+          <p class="muted" data-i18n="privacy.intro"></p>
+          <div class="row" style="margin-bottom:8px">
+            <button id="privacyRefreshBtn" data-i18n-title="btn.refresh" title="Refresh">⟳</button>
+            <button id="privacyReportBtn" data-i18n="privacy.report">Report</button>
+            <span id="privacySelInfo" class="muted small"></span>
+            <span class="grow"></span>
+            <button id="privacyCleanBtn" class="danger" data-i18n="privacy.clean">Clean selected</button>
+          </div>
+          <div class="table-wrap">
+            <table id="privacyTable">
+              <thead>
+                <tr>
+                  <th class="col-check"></th>
+                  <th data-i18n="privacy.colCat">Category</th>
+                  <th data-i18n="privacy.colRisk">Risk</th>
+                  <th class="num" data-i18n="privacy.colSize">Size</th>
+                  <th class="num" data-i18n="privacy.colFiles">Files</th>
+                </tr>
+              </thead>
+              <tbody id="privacyBody"></tbody>
+            </table>
+          </div>
+          <p id="privacyMsg" class="msg" hidden></p>
+        </div>
+        <div class="panel">
+          <label data-i18n="privacy.swTitle">Upload-related switches</label>
+          <div id="privacySwitches"></div>
+          <div class="row" style="margin-top:10px">
+            <button id="privacySwBtn" class="primary" data-i18n="privacy.swApply">Force all off</button>
+          </div>
+          <p class="muted small" data-i18n="privacy.swHint"></p>
+          <p id="privacySwMsg" class="msg" hidden></p>
         </div>
       </div>
     </section>
@@ -143,10 +186,10 @@
     <div id="detailBody" class="detail-body"></div>
   </dialog>
 
-  <!-- delete confirmation -->
+  <!-- delete confirmation (shared by session delete and privacy clean) -->
   <dialog id="confirmDlg" class="modal">
     <div class="modal-head">
-      <h3 data-i18n="del.title">Delete sessions</h3>
+      <h3 id="confirmTitle" data-i18n="del.title">Delete sessions</h3>
       <button class="icon-btn close-x" data-close="confirmDlg">✕</button>
     </div>
     <div id="confirmBody"></div>
@@ -166,6 +209,19 @@
     <div class="modal-actions">
       <button id="resultOpenBackup" hidden data-i18n="res.openBackup">Open backup folder</button>
       <button id="resultClose" class="primary" data-i18n="res.close">Close</button>
+    </div>
+  </dialog>
+
+  <!-- privacy report: workspace snapshot upload evidence -->
+  <dialog id="reportDlg" class="modal wide">
+    <div class="modal-head">
+      <h3 data-i18n="privacy.reportTitle">Privacy report</h3>
+      <button class="icon-btn close-x" data-close="reportDlg">✕</button>
+    </div>
+    <div id="reportBody" class="detail-body"></div>
+    <div class="modal-actions">
+      <button id="reportSaveBtn" class="primary" data-i18n="privacy.reportSave">Save CSV</button>
+      <button id="reportCloseBtn" data-i18n="res.close">Close</button>
     </div>
   </dialog>
 
