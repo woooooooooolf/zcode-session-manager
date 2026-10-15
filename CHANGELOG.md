@@ -3,6 +3,31 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [1.4.1] - 2026-10-15
+<!-- zh -->
+### 新增
+- 适配 ZCode 桌面版 3.15.3（2026-10 实测验证；上一适配版本为 3.11.2）。3.11.2 → 3.15.3 间数据库迁移（0020–0022）均为加列，核心结构未变，本次补齐两处行为差异：
+  - **会话“已删除”状态**：tasks-index 新增 `tasks.deleted` 软删标志。会话列表现在读取并显示该状态（新增“已删除”徽标与筛选，ZCode 界面不再显示这些会话）；受限模式（ZCode 运行中）下“已在 ZCode 中删除”的会话与已归档会话同等对待，可直接删除；对没有该列的旧版数据目录保持容错（按未删除处理）。
+  - **隐私清理新增“会话可视化片段”类别**：`v2\visualizations\` 下按会话生成的 HTML 片段（Gen UI 卡片，内容源自会话对话）。其目录名为不可还原的哈希、无法映射回会话 ID，ZCode 删除会话时也不会清理它们，故纳入隐私清理统一处理。
+<!-- en -->
+### Added
+- Compatible with the ZCode 3.15.3 desktop release (verified 2026-10; the
+  previously verified release was 3.11.2). The 3.11.2 → 3.15.3 database
+  migrations (0020–0022) only add columns, so the core layout is unchanged —
+  this release closes two behavioural gaps:
+  - **Session "deleted" state**: the tasks index gained a `tasks.deleted`
+    soft-delete flag. The session list now reads and shows it (new "Deleted"
+    badge and filter; the ZCode UI hides these sessions). In limited mode
+    (while ZCode runs), sessions already deleted in ZCode are treated like
+    archived ones and can be deleted directly. Directories without that
+    column (older ZCode) degrade gracefully to "not deleted".
+  - **New privacy-cleaner category "Session visualization fragments"**: the
+    per-session HTML fragments under `v2\visualizations\` (Gen UI cards
+    derived from conversation content). Their directory names are
+    irreversible hashes that cannot be mapped back to session ids, and ZCode
+    does not remove them when deleting a session, so the privacy cleaner now
+    handles them.
+
 ## [1.4.0] - 2026-09-18
 <!-- zh -->
 ### 新增

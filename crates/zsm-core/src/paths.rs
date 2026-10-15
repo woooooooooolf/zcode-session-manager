@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 /// Resolved locations of everything zsm touches, derived from one root directory.
 ///
-/// Layout (verified against ZCode desktop, 2026-09):
+/// Layout (verified against ZCode desktop 3.15.3, 2026-10):
 ///   <zcode>/cli/db/db.sqlite          session metadata + content
-///   <zcode>/v2/tasks-index.sqlite     desktop index (archived/pinned flags)
+///   <zcode>/v2/tasks-index.sqlite     desktop index (archived/pinned/deleted flags)
 ///   <zcode>/cli/{rollout,exec,artifacts,image-cache,agents}/...  per-session disk data
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -4860,7 +4860,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zsm-core"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "chrono",
  "dirs 7.0.0",
@@ -4873,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "zsm-gui"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "chrono",
  "dirs 7.0.0",

@@ -163,22 +163,46 @@ fn count(con: &Connection, sql: &str) -> i64 {
 #[test]
 fn list_sessions_flags_and_ghost() {
     let fx = make_fixture();
+    // soft-delete KEEP in the index (tasks.deleted, ZCode 3.15+)
+    let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
+    con.execute("UPDATE tasks SET deleted = 1 WHERE task_id = ?1", [KEEP]).unwrap();
+    con.close().unwrap();
+
     let mut sessions = fx.store.list_sessions().unwrap();
     sessions.sort_by(|a, b| a.id.cmp(&b.id));
 
     let root = sessions.iter().find(|s| s.id == ROOT).unwrap();
     assert!(root.archived);
+    assert!(!root.deleted);
     assert_eq!(root.message_count, Some(3));
     assert_eq!(root.child_count, 1);
     assert!(root.disk_bytes >= 1024 + 512 + 256);
 
     let keep = sessions.iter().find(|s| s.id == KEEP).unwrap();
     assert!(!keep.archived);
+    assert!(keep.deleted);
 
     let ghost = sessions.iter().find(|s| s.id == GHOST).unwrap();
     assert!(ghost.ghost);
     assert_eq!(ghost.message_count, None);
     assert_eq!(sessions.len(), 4);
+}
+
+#[test]
+fn index_without_deleted_column_still_flags() {
+    let fx = make_fixture();
+    // older ZCode layout: no `deleted` column — flags must keep working
+    let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
+    con.execute_batch("ALTER TABLE tasks DROP COLUMN deleted;").unwrap();
+    con.close().unwrap();
+
+    let sessions = fx.store.list_sessions().unwrap();
+    let root = sessions.iter().find(|s| s.id == ROOT).unwrap();
+    assert!(root.archived);
+    assert!(!root.deleted);
+
+    let plan = fx.store.plan_delete(&[ROOT.to_string()]).unwrap();
+    assert!(plan.metas.iter().all(|m| !m.deleted));
 }
 
 #[test]
@@ -335,6 +359,16 @@ fn limited_mode_allows_archived_idle_tree_and_rejects_unarchived_roots() {
         }
         other => panic!("expected Limited, got {other:?}"),
     }
+
+    // soft-deleted root (ZCode itself already treats it as gone) is allowed
+    let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
+    con.execute("UPDATE tasks SET deleted = 1 WHERE task_id = ?1", [KEEP]).unwrap();
+    con.close().unwrap();
+    let r = fx
+        .store
+        .execute_delete_with_policy(&[KEEP.to_string()], policy)
+        .unwrap();
+    assert_eq!(r.deleted.iter().find(|c| c.table == "session").unwrap().rows, 1);
 }
 
 #[test]
@@ -460,11 +494,13 @@ fn privacy_fixture() -> (PathBuf, crate::privacy::PrivacyPaths) {
     std::fs::create_dir_all(v2.join("checkpoints").join("abc123")).unwrap();
     std::fs::create_dir_all(v2.join("logs")).unwrap();
     std::fs::create_dir_all(v2.join("crash").join("live")).unwrap();
+    std::fs::create_dir_all(v2.join("visualizations").join("deadbeef")).unwrap();
     std::fs::create_dir_all(root.join("cli").join("log")).unwrap();
     std::fs::write(v2.join("checkpoints").join("abc123").join("state.json"), "{}").unwrap();
     std::fs::write(v2.join("telemetry-state.json"), "{\"deviceMid\":\"x\"}").unwrap();
     std::fs::write(v2.join("logs").join("2026.log"), "log").unwrap();
     std::fs::write(v2.join("crash").join("live").join("a.dmp"), "dump").unwrap();
+    std::fs::write(v2.join("visualizations").join("deadbeef").join("card.html"), "<html>x</html>").unwrap();
     std::fs::write(root.join("cli").join("log").join("zcode.jsonl"), "{}").unwrap();
     std::fs::write(
         v2.join("setting.json"),
@@ -494,20 +530,29 @@ fn privacy_scan_and_clean_roundtrip() {
     assert!(by_id("desktop_logs").present);
     assert!(by_id("cli_logs").present);
     assert!(by_id("crash_reports").present);
+    assert!(by_id("session_visualizations").present);
     assert!(by_id("recent_projects").present, "{:?}", by_id("recent_projects"));
     assert!(!by_id("browser_profile").present);
     assert!(!by_id("updater_cache").present);
 
-    let ids: Vec<String> = ["repo_snapshots", "telemetry_state", "desktop_logs", "cli_logs", "crash_reports"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let ids: Vec<String> = [
+        "repo_snapshots",
+        "telemetry_state",
+        "desktop_logs",
+        "cli_logs",
+        "crash_reports",
+        "session_visualizations",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
     let report = crate::privacy::clean(&paths, &ids).unwrap();
     assert!(report.outcomes.iter().all(|o| o.ok), "{:?}", report.outcomes);
     // directory shells are kept, contents removed
     assert!(root.join("v2/checkpoints").read_dir().unwrap().next().is_none());
     assert!(root.join("v2/logs").read_dir().unwrap().next().is_none());
     assert!(root.join("v2/crash").read_dir().unwrap().next().is_none());
+    assert!(root.join("v2/visualizations").read_dir().unwrap().next().is_none());
     assert!(!root.join("v2/telemetry-state.json").exists());
 }
 

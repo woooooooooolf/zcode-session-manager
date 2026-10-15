@@ -3,8 +3,10 @@
 //! telemetry device state, desktop/CLI logs, crash dumps, the embedded
 //! Chromium profile and the updater cache.
 //!
-//! Layout verified against a real install on 2026-09-18:
+//! Layout verified against a real install on 2026-09-18, re-verified against
+//! ZCode 3.15.3 on 2026-10-15:
 //!   <zcode>/v2/checkpoints/<hash>/          repo-snapshot manifests + upload state
+//!   <zcode>/v2/visualizations/<hash>/       per-session Gen UI HTML fragments
 //!   <zcode>/v2/telemetry-state.json         telemetry device id (deviceMid)
 //!   <zcode>/v2/logs/                        desktop logs (contain full settings dumps)
 //!   <zcode>/v2/crash/                       crash dumps
@@ -77,6 +79,7 @@ pub const CATEGORY_IDS: &[&str] = &[
     "desktop_logs",
     "cli_logs",
     "crash_reports",
+    "session_visualizations",
     "browser_profile",
     "recent_projects",
     "updater_cache",
@@ -111,6 +114,11 @@ fn entry_targets(p: &PrivacyPaths, id: &str) -> Vec<PathBuf> {
         "desktop_logs" => vec![z(&["v2", "logs"])],
         "cli_logs" => vec![z(&["cli", "log"])],
         "crash_reports" => vec![z(&["v2", "crash"])],
+        // Gen UI fragments, one dir per session that produced a visualization.
+        // Keyed by an opaque hash that cannot be mapped back to a session id,
+        // so they can neither cascade with session deletion nor be listed
+        // per-session — the privacy cleaner is the only sane home for them.
+        "session_visualizations" => vec![z(&["v2", "visualizations"])],
         "browser_profile" => vec![r(&["session"])],
         "updater_cache" => vec![p.local_updater.clone()],
         "agent_memories" => vec![z(&["cli", "memories"])],

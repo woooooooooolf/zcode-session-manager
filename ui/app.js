@@ -26,7 +26,7 @@ let LAST_RESULT = null; // backup dir of the last delete, for "open folder"
 let SCAN_ERROR = null;
 let PRIVACY = null; // privacy_scan payload (entries, switches)
 let PRIVACY_SEL = new Set();
-const PRIVACY_OFF_BY_DEFAULT = new Set(["browser_profile", "agent_memories"]); // destructive side effects
+const PRIVACY_OFF_BY_DEFAULT = new Set(["browser_profile", "agent_memories", "recent_projects"]); // destructive side effects / wipes the ZCode session list
 let PRIVACY_SCANNED = false;
 let FILTER = new Set(); // categories: active/archived/pinned/child/ghost (empty = all)
 let SORT = { key: "updated", dir: "desc" };
@@ -300,14 +300,15 @@ function coreOpsAllowed() {
     (STATE.integrity || []).every((d) => d.state === "ok"));
 }
 
-/// Limited mode while ZCode runs: archived + idle beyond the threshold.
-/// The backend enforces this authoritatively (incl. automation references).
+/// Limited mode while ZCode runs: archived-or-deleted + idle beyond the
+/// threshold. The backend enforces this authoritatively (incl. automation
+/// references).
 function rowDeletable(s) {
   if (!coreOpsAllowed()) return false;
   if (!STATE.zcodeRunning) return true;
   const idleMin = (STATE.settings && STATE.settings.idleMinutes) || 60;
   const updated = s.updatedMs || 0;
-  return !!s.archived && Date.now() - updated >= idleMin * 60000;
+  return (!!s.archived || !!s.deleted) && Date.now() - updated >= idleMin * 60000;
 }
 
 function renderAll() {
@@ -359,22 +360,23 @@ function renderFooter() {
 
 function matchFilter(s) {
   if (!FILTER.size) return true; // nothing selected = show everything
-  if (FILTER.has("active") && !s.archived) return true;
+  if (FILTER.has("active") && !s.archived && !s.deleted) return true;
   if (FILTER.has("archived") && s.archived) return true;
+  if (FILTER.has("deleted") && s.deleted) return true;
   if (FILTER.has("pinned") && s.pinned) return true;
   if (FILTER.has("child") && s.parentId) return true;
   if (FILTER.has("ghost") && s.ghost) return true;
   return false;
 }
 
-/// Flat, always-visible filter group: five checkboxes + a clear button that
+/// Flat, always-visible filter group: six checkboxes + a clear button that
 /// appears once anything is selected. Toggling re-renders immediately.
 function renderFilterGroup() {
   const group = $("filterGroup");
   if (!group) return;
   group.textContent = "";
   group.appendChild(el("span", "filter-label", t("filter.label")));
-  for (const cat of ["active", "archived", "pinned", "child", "ghost"]) {
+  for (const cat of ["active", "archived", "deleted", "pinned", "child", "ghost"]) {
     const item = el("label", "filter-chip");
     const cb = document.createElement("input");
     cb.type = "checkbox";
@@ -515,6 +517,7 @@ function renderTable() {
     const chip = (cls, key) => tdFlags.appendChild(el("span", `badge ${cls}`, t(key)));
     if (s.ghost) chip("badge-ghost", "chip.ghost");
     if (s.archived) chip("badge-a", "chip.archived");
+    if (s.deleted) chip("badge-d", "chip.deleted");
     if (s.pinned) chip("badge-p", "chip.pinned");
     if (s.parentId) chip("badge-c", "chip.child");
     if (!tdFlags.childNodes.length) tdFlags.appendChild(el("span", "muted", "—"));
@@ -668,7 +671,7 @@ async function openDeleteDialog(ids) {
 
   const list = el("ul", "plan-list");
   for (const m of plan.metas) {
-    const li = el("li", "", `${m.archived ? "[A] " : ""}${m.ghost ? t("badge.ghost") : m.title || m.id}`);
+    const li = el("li", "", `${m.archived ? "[A] " : ""}${m.deleted ? "[D] " : ""}${m.ghost ? t("badge.ghost") : m.title || m.id}`);
     li.appendChild(el("span", "muted small", ` ${m.id}`));
     list.appendChild(li);
   }
@@ -1407,7 +1410,7 @@ function renderHelp() {
   body.appendChild(ul);
   body.appendChild(el("h4", "", t("help.badgesTitle")));
   const ul2 = el("ul", "about-list");
-  for (const k of ["help.badgeA", "help.badgeP", "help.badgeC", "help.badgeG"]) {
+  for (const k of ["help.badgeA", "help.badgeD", "help.badgeP", "help.badgeC", "help.badgeG"]) {
     ul2.appendChild(el("li", "", t(k)));
   }
   body.appendChild(ul2);

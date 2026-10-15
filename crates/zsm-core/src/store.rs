@@ -37,6 +37,9 @@ pub struct SessionSummary {
     pub child_count: i64,
     pub archived: bool,
     pub pinned: bool,
+    /// Soft-deleted in the tasks index (`tasks.deleted`, ZCode 3.15+); the
+    /// content row may still exist — ZCode hides these from its task list.
+    pub deleted: bool,
     /// Present in the tasks index but with no content row left in db.sqlite.
     pub ghost: bool,
     pub disk_bytes: u64,
@@ -77,6 +80,7 @@ pub struct IdMeta {
     pub title: String,
     pub ghost: bool,
     pub archived: bool,
+    pub deleted: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -189,6 +193,7 @@ impl Store {
                 child_count: r.get::<_, Option<i64>>(8)?.unwrap_or(0),
                 archived: false,
                 pinned: false,
+                deleted: false,
                 ghost: false,
                 disk_bytes: 0,
             })
@@ -204,10 +209,11 @@ impl Store {
         let flags = self.index_flags();
         let mut seen: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
         if let Some(map) = &flags {
-            for (id, (archived, pinned, _updated)) in map {
+            for (id, (archived, pinned, deleted, _updated)) in map {
                 if let Some(s) = out.iter_mut().find(|s| &s.id == id) {
                     s.archived = *archived;
                     s.pinned = *pinned;
+                    s.deleted = *deleted;
                 } else {
                     seen.insert(id.clone());
                     out.push(SessionSummary {
@@ -222,6 +228,7 @@ impl Store {
                         child_count: 0,
                         archived: *archived,
                         pinned: *pinned,
+                        deleted: *deleted,
                         ghost: true,
                         disk_bytes: 0,
                     });
@@ -238,10 +245,11 @@ impl Store {
         Ok(out)
     }
 
-    /// task_id → (archived, pinned, updated_at) from the tasks index; None when unavailable.
-    /// Falls back to a literal 0 for updated_at if that column is absent, so a
-    /// benign drift never disables the archived/pinned flags wholesale.
-    fn index_flags(&self) -> Option<HashMap<String, (bool, bool, i64)>> {
+    /// task_id → (archived, pinned, deleted, updated_at) from the tasks index;
+    /// None when unavailable. Optional columns (`updated_at`, `deleted` — the
+    /// latter added by ZCode 3.15) fall back to a literal 0, so benign drift
+    /// never disables the archived/pinned/deleted flags wholesale.
+    fn index_flags(&self) -> Option<HashMap<String, (bool, bool, bool, i64)>> {
         if !self.paths.tasks_db.is_file() {
             return None;
         }
@@ -249,11 +257,12 @@ impl Store {
         if !crate::util::has_table(&con, "tasks") {
             return None;
         }
-        let has_updated = crate::util::columns(&con, "tasks").contains("updated_at");
-        let sql = if has_updated {
-            "SELECT task_id, archived, pinned, updated_at FROM tasks"
-        } else {
-            "SELECT task_id, archived, pinned, 0 FROM tasks"
+        let cols = crate::util::columns(&con, "tasks");
+        let sql = match (cols.contains("updated_at"), cols.contains("deleted")) {
+            (true, true) => "SELECT task_id, archived, pinned, deleted, updated_at FROM tasks",
+            (true, false) => "SELECT task_id, archived, pinned, 0, updated_at FROM tasks",
+            (false, true) => "SELECT task_id, archived, pinned, deleted, 0 FROM tasks",
+            (false, false) => "SELECT task_id, archived, pinned, 0, 0 FROM tasks",
         };
         let mut stmt = con.prepare(sql).ok()?;
         let rows = stmt
@@ -262,12 +271,13 @@ impl Store {
                     r.get::<_, String>(0)?,
                     r.get::<_, Option<i64>>(1)?.unwrap_or(0) != 0,
                     r.get::<_, Option<i64>>(2)?.unwrap_or(0) != 0,
-                    r.get::<_, Option<i64>>(3)?.unwrap_or(0),
+                    r.get::<_, Option<i64>>(3)?.unwrap_or(0) != 0,
+                    r.get::<_, Option<i64>>(4)?.unwrap_or(0),
                 ))
             })
             .ok()?;
         Some(
-            rows.filter_map(|r| r.ok().map(|(id, a, p, u)| (id, (a, p, u))))
+            rows.filter_map(|r| r.ok().map(|(id, a, p, d, u)| (id, (a, p, d, u))))
                 .collect(),
         )
     }
@@ -545,6 +555,7 @@ impl Store {
                     title: title.unwrap_or_default(),
                     ghost: !rows.contains_key(id),
                     archived: flags.get(id).map(|f| f.0).unwrap_or(false),
+                    deleted: flags.get(id).map(|f| f.2).unwrap_or(false),
                 });
             }
         }
@@ -690,7 +701,8 @@ impl Store {
     /// - every id in the plan must be idle longer than `idle_minutes`
     ///   (freshness = max(db session.time_updated, tasks-index updated_at))
     /// - every id must not be referenced by an enabled automation
-    /// - root sessions must additionally be archived; cascade children are
+    /// - root sessions must additionally be archived or already soft-deleted
+    ///   in the index (ZCode treats those as gone too); cascade children are
     ///   exempt because ZCode does not propagate the archived flag to forks —
     ///   requiring it would make most archived trees with forks undeletable
     fn limited_violations(
@@ -747,11 +759,11 @@ impl Store {
         let roots_set: HashSet<&String> = roots.iter().collect();
         for id in all_ids {
             let sess_updated = updated.get(id).copied();
-            let (archived, idx_updated) = idx
+            let (archived, deleted, idx_updated) = idx
                 .as_ref()
                 .and_then(|m| m.get(id))
-                .map(|(a, _p, u)| (*a, Some(*u)))
-                .unwrap_or((false, None));
+                .map(|(a, _p, d, u)| (*a, *d, Some(*u)))
+                .unwrap_or((false, false, None));
             let effective = sess_updated.or(idx_updated).unwrap_or(0);
             if effective > cutoff {
                 violations.push((id.clone(), "too_recent"));
@@ -761,7 +773,7 @@ impl Store {
                 violations.push((id.clone(), "automation_ref"));
                 continue;
             }
-            if roots_set.contains(id) && !archived {
+            if roots_set.contains(id) && !archived && !deleted {
                 violations.push((id.clone(), "not_archived"));
             }
         }
