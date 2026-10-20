@@ -4,9 +4,10 @@
 //! Chromium profile and the updater cache.
 //!
 //! Layout verified against a real install on 2026-09-18, re-verified against
-//! ZCode 3.15.3 on 2026-10-15:
+//! ZCode 3.15.3 (2026-10-15) and 3.16.2 (2026-10-20):
 //!   <zcode>/v2/checkpoints/<hash>/          repo-snapshot manifests + upload state
 //!   <zcode>/v2/visualizations/<hash>/       per-session Gen UI HTML fragments
+//!   <zcode>/backup/<db>-<ts>-<uuid>/        pre-migration table backups (3.16.2+)
 //!   <zcode>/v2/telemetry-state.json         telemetry device id (deviceMid)
 //!   <zcode>/v2/logs/                        desktop logs (contain full settings dumps)
 //!   <zcode>/v2/crash/                       crash dumps
@@ -80,6 +81,7 @@ pub const CATEGORY_IDS: &[&str] = &[
     "cli_logs",
     "crash_reports",
     "session_visualizations",
+    "migration_backups",
     "browser_profile",
     "recent_projects",
     "updater_cache",
@@ -119,6 +121,12 @@ fn entry_targets(p: &PrivacyPaths, id: &str) -> Vec<PathBuf> {
         // so they can neither cascade with session deletion nor be listed
         // per-session — the privacy cleaner is the only sane home for them.
         "session_visualizations" => vec![z(&["v2", "visualizations"])],
+        // Table copies ZCode takes before applying schema migrations (one
+        // dir per database per upgrade, since 3.16.2). They retain session
+        // metadata (titles, paths) of already-deleted sessions; not content
+        // bodies. Also ZCode's own rollback safety net for a failed
+        // migration — cleaned deliberately, off by default in the UI.
+        "migration_backups" => vec![z(&["backup"])],
         "browser_profile" => vec![r(&["session"])],
         "updater_cache" => vec![p.local_updater.clone()],
         "agent_memories" => vec![z(&["cli", "memories"])],

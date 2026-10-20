@@ -46,8 +46,9 @@ CREATE TABLE permission (id TEXT PRIMARY KEY, project_id TEXT, data TEXT);
 const TI_SCHEMA: &str = "
 CREATE TABLE tasks (task_id TEXT PRIMARY KEY, title TEXT,
     pinned INTEGER DEFAULT 0, archived INTEGER DEFAULT 0, deleted INTEGER DEFAULT 0,
-    updated_at INTEGER DEFAULT 0);
+    cli_deleted INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0);
 CREATE TABLE task_group_members (id TEXT PRIMARY KEY, task_id TEXT);
+CREATE TABLE task_group_admissions (workspace_key TEXT, task_id TEXT, user_organized INTEGER);
 CREATE TABLE automation_runs (run_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE off_peak_tasks (off_peak_task_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE automations (automation_id TEXT PRIMARY KEY, target_task_id TEXT, enabled INTEGER DEFAULT 1);
@@ -130,6 +131,11 @@ fn make_fixture() -> Fixture {
         .unwrap();
     }
     con.execute("INSERT INTO task_group_members VALUES ('gm1', ?1)", [ROOT]).unwrap();
+    con.execute(
+        "INSERT INTO task_group_admissions VALUES ('D:\\proj\\demo', ?1, 0)",
+        [ROOT],
+    )
+    .unwrap();
     con.close().unwrap();
 
     // disk artifacts
@@ -206,6 +212,34 @@ fn index_without_deleted_column_still_flags() {
 }
 
 #[test]
+fn deleted_flag_unions_all_soft_delete_markers() {
+    let fx = make_fixture();
+    // index-side: cli_deleted alone (deleted stays 0) must light the flag
+    let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
+    con.execute("UPDATE tasks SET cli_deleted = 1 WHERE task_id = ?1", [KEEP]).unwrap();
+    con.close().unwrap();
+    let sessions = fx.store.list_sessions().unwrap();
+    assert!(sessions.iter().find(|s| s.id == KEEP).unwrap().deleted);
+    assert!(!sessions.iter().find(|s| s.id == ROOT).unwrap().deleted);
+
+    // content-side: session.time_deleted (column absent in the base fixture,
+    // added here as ZCode 3.16.2 does) must light it too
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    con.execute_batch("ALTER TABLE session ADD COLUMN time_deleted INTEGER;").unwrap();
+    con.execute("UPDATE session SET time_deleted = 1789000000000 WHERE id = ?1", [CHILD]).unwrap();
+    con.close().unwrap();
+    let sessions = fx.store.list_sessions().unwrap();
+    assert!(sessions.iter().find(|s| s.id == CHILD).unwrap().deleted);
+
+    // limited mode: cli_deleted root passes without archived
+    crate::set_zcode_running_override(Some(true));
+    assert!(fx
+        .store
+        .execute_delete_with_policy(&[KEEP.to_string()], RunningPolicy::Limited { idle_minutes: 60 })
+        .is_ok());
+}
+
+#[test]
 fn plan_delete_touches_nothing() {
     let fx = make_fixture();
     let plan = fx.store.plan_delete(&[ROOT.to_string()]).unwrap();
@@ -259,10 +293,11 @@ fn execute_delete_cascades_content_disk_index() {
     assert!(!fx.paths.cli_dir.join("artifacts").join(ROOT).exists());
     assert!(fx.paths.cli_dir.join("image-cache").join(KEEP).exists());
 
-    // index: root+child tasks rows gone, keep+ghost remain
+    // index: root+child tasks rows gone, keep+ghost remain; admissions cleaned
     let con = Connection::open(fx.paths.tasks_db.clone()).unwrap();
     assert_eq!(count(&con, "SELECT COUNT(*) FROM tasks"), 2);
     assert_eq!(count(&con, "SELECT COUNT(*) FROM task_group_members"), 0);
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM task_group_admissions"), 0);
     con.close().unwrap();
 
     // backup contains everything needed for a restore
@@ -495,12 +530,15 @@ fn privacy_fixture() -> (PathBuf, crate::privacy::PrivacyPaths) {
     std::fs::create_dir_all(v2.join("logs")).unwrap();
     std::fs::create_dir_all(v2.join("crash").join("live")).unwrap();
     std::fs::create_dir_all(v2.join("visualizations").join("deadbeef")).unwrap();
+    std::fs::create_dir_all(root.join("backup").join("cli-123-uuid")).unwrap();
     std::fs::create_dir_all(root.join("cli").join("log")).unwrap();
     std::fs::write(v2.join("checkpoints").join("abc123").join("state.json"), "{}").unwrap();
     std::fs::write(v2.join("telemetry-state.json"), "{\"deviceMid\":\"x\"}").unwrap();
     std::fs::write(v2.join("logs").join("2026.log"), "log").unwrap();
     std::fs::write(v2.join("crash").join("live").join("a.dmp"), "dump").unwrap();
     std::fs::write(v2.join("visualizations").join("deadbeef").join("card.html"), "<html>x</html>").unwrap();
+    std::fs::write(root.join("backup").join("cli-123-uuid").join("tables.sqlite"), "sqlite-bytes").unwrap();
+    std::fs::write(root.join("backup").join("cli-123-uuid").join("backup.json"), "{}").unwrap();
     std::fs::write(root.join("cli").join("log").join("zcode.jsonl"), "{}").unwrap();
     std::fs::write(
         v2.join("setting.json"),
@@ -531,6 +569,7 @@ fn privacy_scan_and_clean_roundtrip() {
     assert!(by_id("cli_logs").present);
     assert!(by_id("crash_reports").present);
     assert!(by_id("session_visualizations").present);
+    assert!(by_id("migration_backups").present);
     assert!(by_id("recent_projects").present, "{:?}", by_id("recent_projects"));
     assert!(!by_id("browser_profile").present);
     assert!(!by_id("updater_cache").present);
@@ -542,6 +581,7 @@ fn privacy_scan_and_clean_roundtrip() {
         "cli_logs",
         "crash_reports",
         "session_visualizations",
+        "migration_backups",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -553,6 +593,7 @@ fn privacy_scan_and_clean_roundtrip() {
     assert!(root.join("v2/logs").read_dir().unwrap().next().is_none());
     assert!(root.join("v2/crash").read_dir().unwrap().next().is_none());
     assert!(root.join("v2/visualizations").read_dir().unwrap().next().is_none());
+    assert!(root.join("backup").read_dir().unwrap().next().is_none());
     assert!(!root.join("v2/telemetry-state.json").exists());
 }
 

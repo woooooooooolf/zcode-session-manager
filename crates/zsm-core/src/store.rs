@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 use crate::integrity::{self, DbStatus};
 use crate::paths::Paths;
 use crate::util::{existing_tables, open_ro, open_rw, qm};
-use rusqlite::{params_from_iter, TransactionBehavior};
+use rusqlite::{params_from_iter, Connection, TransactionBehavior};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -139,6 +139,120 @@ pub struct Store {
     pub backups_dir: Option<String>,
 }
 
+/// One DELETE step of the content-db cascade, built in safe child-first
+/// order. Shared by plan counting and actual deletion so the two can never
+/// drift apart (the 3.16.2 `task_group_admissions` gap came from maintaining
+/// parallel copies of this list in two places).
+struct CascadeStep {
+    table: String,
+    where_sql: String,
+    params: Vec<String>,
+}
+
+fn select_ids(con: &Connection, table: &str, col: &str, ids: &[String]) -> Result<Vec<String>> {
+    let sql = format!("SELECT id FROM {table} WHERE {col} IN ({})", qm(ids.len()));
+    Ok(con
+        .prepare(&sql)?
+        .query_map(params_from_iter(ids.iter()), |r| r.get::<_, String>(0))?
+        .filter_map(|r| r.ok())
+        .collect())
+}
+
+fn run_step(table: &str, run_ids: &[String]) -> CascadeStep {
+    CascadeStep {
+        table: table.to_string(),
+        where_sql: format!("run_id IN ({})", qm(run_ids.len())),
+        params: run_ids.to_vec(),
+    }
+}
+
+/// All content-db rows touched by deleting these session ids, children first.
+/// Two generations of workflow journals coexist in the schema (legacy
+/// `workflow_*` and the `dwf_*` journal — ZCode 3.16 still creates both):
+/// runs hang off the parent session, their children off the run, and dwf
+/// actors additionally carry their own nullable session_id.
+fn cascade_steps(con: &Connection, ids: &[String]) -> Result<Vec<CascadeStep>> {
+    let tables = existing_tables(con);
+    let mut steps = Vec::new();
+
+    for t in CHILD_TABLES {
+        if tables.contains(*t) {
+            steps.push(CascadeStep {
+                table: t.to_string(),
+                where_sql: format!("session_id IN ({})", qm(ids.len())),
+                params: ids.to_vec(),
+            });
+        }
+    }
+    if tables.contains("session_task_link") {
+        steps.push(CascadeStep {
+            table: "session_task_link".into(),
+            where_sql: format!(
+                "parent_session_id IN ({0}) OR child_session_id IN ({0})",
+                qm(ids.len())
+            ),
+            params: ids.iter().chain(ids.iter()).cloned().collect(),
+        });
+    }
+    if tables.contains("workflow_run") {
+        let run_ids = select_ids(con, "workflow_run", "parent_session_id", ids)?;
+        if !run_ids.is_empty() {
+            for t in ["workflow_event", "workflow_activity"] {
+                if tables.contains(t) {
+                    steps.push(run_step(t, &run_ids));
+                }
+            }
+            steps.push(CascadeStep {
+                table: "workflow_run".into(),
+                where_sql: format!("id IN ({})", qm(run_ids.len())),
+                params: run_ids,
+            });
+        }
+    }
+    if tables.contains("dwf_run") {
+        let dwf_ids = select_ids(con, "dwf_run", "parent_session_id", ids)?;
+        if tables.contains("dwf_actor") {
+            // actors belong to a run but may also name their own session; the
+            // union keeps counting and deletion covering exactly the same rows
+            let (where_sql, params) = if dwf_ids.is_empty() {
+                (format!("session_id IN ({})", qm(ids.len())), ids.to_vec())
+            } else {
+                (
+                    format!(
+                        "run_id IN ({0}) OR session_id IN ({1})",
+                        qm(dwf_ids.len()),
+                        qm(ids.len())
+                    ),
+                    dwf_ids.iter().chain(ids.iter()).cloned().collect(),
+                )
+            };
+            steps.push(CascadeStep {
+                table: "dwf_actor".into(),
+                where_sql,
+                params,
+            });
+        }
+        if !dwf_ids.is_empty() {
+            for t in ["dwf_node", "dwf_event"] {
+                if tables.contains(t) {
+                    steps.push(run_step(t, &dwf_ids));
+                }
+            }
+            steps.push(CascadeStep {
+                table: "dwf_run".into(),
+                where_sql: format!("id IN ({})", qm(dwf_ids.len())),
+                params: dwf_ids,
+            });
+        }
+    }
+    steps.push(CascadeStep {
+        table: "session".into(),
+        where_sql: format!("id IN ({})", qm(ids.len())),
+        params: ids.to_vec(),
+    });
+    Ok(steps)
+}
+
 /// How to behave when ZCode is running.
 #[derive(Debug, Clone, Copy)]
 pub enum RunningPolicy {
@@ -173,13 +287,21 @@ impl Store {
 
     pub fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
         let con = open_ro(&self.paths.db_path)?;
-        let mut stmt = con.prepare(
+        // `session.time_deleted` (ZCode 0.16.9 / 3.16.2+, CLI-side soft delete)
+        // feeds the deleted flag when present; older layouts select a literal 0
+        let sess_cols = crate::util::columns(&con, "session");
+        let content_deleted = if sess_cols.contains("time_deleted") {
+            "s.time_deleted IS NOT NULL"
+        } else {
+            "0"
+        };
+        let mut stmt = con.prepare(&format!(
             "SELECT s.id, s.title, s.task_type, s.directory, s.parent_id, \
-                    s.time_created, s.time_updated, \
+                    s.time_created, s.time_updated, {content_deleted}, \
                     (SELECT COUNT(*) FROM message m WHERE m.session_id = s.id), \
                     (SELECT COUNT(*) FROM session c WHERE c.parent_id = s.id) \
-             FROM session s",
-        )?;
+             FROM session s"
+        ))?;
         let rows = stmt.query_map([], |r| {
             Ok(SessionSummary {
                 id: r.get(0)?,
@@ -189,11 +311,11 @@ impl Store {
                 parent_id: r.get(4)?,
                 created_ms: Self::col_ms(r, 5)?,
                 updated_ms: Self::col_ms(r, 6)?,
-                message_count: r.get(7).ok(),
-                child_count: r.get::<_, Option<i64>>(8)?.unwrap_or(0),
+                deleted: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                message_count: r.get(8).ok(),
+                child_count: r.get::<_, Option<i64>>(9)?.unwrap_or(0),
                 archived: false,
                 pinned: false,
-                deleted: false,
                 ghost: false,
                 disk_bytes: 0,
             })
@@ -207,15 +329,13 @@ impl Store {
             }
         }
         let flags = self.index_flags();
-        let mut seen: HashSet<String> = out.iter().map(|s| s.id.clone()).collect();
         if let Some(map) = &flags {
             for (id, (archived, pinned, deleted, _updated)) in map {
                 if let Some(s) = out.iter_mut().find(|s| &s.id == id) {
                     s.archived = *archived;
                     s.pinned = *pinned;
-                    s.deleted = *deleted;
+                    s.deleted = s.deleted || *deleted;
                 } else {
-                    seen.insert(id.clone());
                     out.push(SessionSummary {
                         id: id.clone(),
                         title: String::new(), // filled below as ghost
@@ -241,14 +361,14 @@ impl Store {
             }
             s.disk_bytes = disk::usage(&self.paths.cli_dir, &s.id);
         }
-        let _ = seen;
         Ok(out)
     }
 
     /// task_id → (archived, pinned, deleted, updated_at) from the tasks index;
-    /// None when unavailable. Optional columns (`updated_at`, `deleted` — the
-    /// latter added by ZCode 3.15) fall back to a literal 0, so benign drift
-    /// never disables the archived/pinned/deleted flags wholesale.
+    /// None when unavailable. Optional columns fall back so benign drift never
+    /// disables the flags wholesale: `updated_at` (older ZCode), and the two
+    /// soft-delete markers — `deleted` (desktop, 3.15+) and `cli_deleted`
+    /// (CLI-side sync, 3.16.2+) — are OR-ed into one deleted flag.
     fn index_flags(&self) -> Option<HashMap<String, (bool, bool, bool, i64)>> {
         if !self.paths.tasks_db.is_file() {
             return None;
@@ -258,13 +378,15 @@ impl Store {
             return None;
         }
         let cols = crate::util::columns(&con, "tasks");
-        let sql = match (cols.contains("updated_at"), cols.contains("deleted")) {
-            (true, true) => "SELECT task_id, archived, pinned, deleted, updated_at FROM tasks",
-            (true, false) => "SELECT task_id, archived, pinned, 0, updated_at FROM tasks",
-            (false, true) => "SELECT task_id, archived, pinned, deleted, 0 FROM tasks",
-            (false, false) => "SELECT task_id, archived, pinned, 0, 0 FROM tasks",
+        let del = match (cols.contains("deleted"), cols.contains("cli_deleted")) {
+            (true, true) => "(deleted OR cli_deleted)",
+            (true, false) => "deleted",
+            (false, true) => "cli_deleted",
+            (false, false) => "0",
         };
-        let mut stmt = con.prepare(sql).ok()?;
+        let upd = if cols.contains("updated_at") { "updated_at" } else { "0" };
+        let sql = format!("SELECT task_id, archived, pinned, {del}, {upd} FROM tasks");
+        let mut stmt = con.prepare(&sql).ok()?;
         let rows = stmt
             .query_map([], |r| {
                 Ok((
@@ -403,133 +525,15 @@ impl Store {
     pub fn plan_delete(&self, roots: &[String]) -> Result<DeletePlan> {
         let all_ids = self.cascade_ids(roots)?;
         let con = open_ro(&self.paths.db_path)?;
-        let tables = existing_tables(&con);
-        let mut counts: Vec<RowCount> = Vec::new();
+        let steps = cascade_steps(&con, &all_ids)?;
 
-        for t in CHILD_TABLES {
-            if tables.contains(*t) {
-                let sql = format!(
-                    "SELECT COUNT(*) FROM {t} WHERE session_id IN ({})",
-                    qm(all_ids.len())
-                );
-                let n = con.query_row(&sql, params_from_iter(all_ids.iter()), |r| r.get(0))?;
-                counts.push(RowCount {
-                    table: t.to_string(),
-                    rows: n,
-                });
-            }
-        }
-        if tables.contains("session_task_link") {
-            let sql = format!(
-                "SELECT COUNT(*) FROM session_task_link WHERE parent_session_id IN ({0}) \
-                 OR child_session_id IN ({0})",
-                qm(all_ids.len())
-            );
-            let n = con.query_row(&sql, params_from_iter(all_ids.iter().chain(all_ids.iter())), |r| {
-                r.get(0)
-            })?;
-            counts.push(RowCount {
-                table: "session_task_link".into(),
-                rows: n,
-            });
-        }
-        if tables.contains("workflow_run") {
-            let sql = format!(
-                "SELECT id FROM workflow_run WHERE parent_session_id IN ({})",
-                qm(all_ids.len())
-            );
-            let run_ids: Vec<String> = con
-                .prepare(&sql)?
-                .query_map(params_from_iter(all_ids.iter()), |r| r.get(0))?
-                .filter_map(|r| r.ok())
-                .collect();
-            if !run_ids.is_empty() {
-                counts.push(RowCount {
-                    table: "workflow_run".into(),
-                    rows: run_ids.len() as i64,
-                });
-                for t in ["workflow_event", "workflow_activity"] {
-                    if tables.contains(t) {
-                        let sql = format!(
-                            "SELECT COUNT(*) FROM {t} WHERE run_id IN ({})",
-                            qm(run_ids.len())
-                        );
-                        let n = con.query_row(&sql, params_from_iter(run_ids.iter()), |r| r.get(0))?;
-                        counts.push(RowCount {
-                            table: t.to_string(),
-                            rows: n,
-                        });
-                    }
-                }
-            }
-        }
-        if tables.contains("dwf_run") {
-            let sql = format!(
-                "SELECT id FROM dwf_run WHERE parent_session_id IN ({})",
-                qm(all_ids.len())
-            );
-            let dwf_ids: Vec<String> = con
-                .prepare(&sql)?
-                .query_map(params_from_iter(all_ids.iter()), |r| r.get(0))?
-                .filter_map(|r| r.ok())
-                .collect();
-            if !dwf_ids.is_empty() {
-                for t in ["dwf_node", "dwf_event"] {
-                    if tables.contains(t) {
-                        let sql = format!(
-                            "SELECT COUNT(*) FROM {t} WHERE run_id IN ({})",
-                            qm(dwf_ids.len())
-                        );
-                        let n =
-                            con.query_row(&sql, params_from_iter(dwf_ids.iter()), |r| r.get(0))?;
-                        counts.push(RowCount {
-                            table: t.to_string(),
-                            rows: n,
-                        });
-                    }
-                }
-                counts.push(RowCount {
-                    table: "dwf_run".into(),
-                    rows: dwf_ids.len() as i64,
-                });
-            }
-            if tables.contains("dwf_actor") {
-                // actors belong to a run but may also name their own session;
-                // count the union so the plan matches what deletion removes
-                let sql = if dwf_ids.is_empty() {
-                    format!(
-                        "SELECT COUNT(*) FROM dwf_actor WHERE session_id IN ({})",
-                        qm(all_ids.len())
-                    )
-                } else {
-                    format!(
-                        "SELECT COUNT(*) FROM dwf_actor WHERE run_id IN ({0}) \
-                         OR session_id IN ({1})",
-                        qm(dwf_ids.len()),
-                        qm(all_ids.len())
-                    )
-                };
-                let n = con.query_row(
-                    &sql,
-                    params_from_iter(dwf_ids.iter().chain(all_ids.iter())),
-                    |r| r.get(0),
-                )?;
-                counts.push(RowCount {
-                    table: "dwf_actor".into(),
-                    rows: n,
-                });
-            }
-        }
-        {
-            let sql = format!("SELECT COUNT(*) FROM session WHERE id IN ({})", qm(all_ids.len()));
-            let n = con.query_row(&sql, params_from_iter(all_ids.iter()), |r| r.get(0))?;
-            counts.push(RowCount {
-                table: "session".into(),
-                rows: n,
-            });
+        let mut counts = Vec::new();
+        for s in &steps {
+            let sql = format!("SELECT COUNT(*) FROM {} WHERE {}", s.table, s.where_sql);
+            let n = con.query_row(&sql, params_from_iter(s.params.iter()), |r| r.get(0))?;
+            counts.push(RowCount { table: s.table.clone(), rows: n });
         }
 
-        let known: HashSet<&str> = tables.iter().map(|s| s.as_str()).collect();
         let mut metas = Vec::new();
         if !all_ids.is_empty() {
             let sql = format!(
@@ -548,11 +552,9 @@ impl Store {
                 .collect();
             let flags = self.index_flags().unwrap_or_default();
             for id in &all_ids {
-                let title = rows.get(id).cloned();
-                let _ = known;
                 metas.push(IdMeta {
                     id: id.clone(),
-                    title: title.unwrap_or_default(),
+                    title: rows.get(id).cloned().unwrap_or_default(),
                     ghost: !rows.contains_key(id),
                     archived: flags.get(id).map(|f| f.0).unwrap_or(false),
                     deleted: flags.get(id).map(|f| f.2).unwrap_or(false),
@@ -657,7 +659,7 @@ impl Store {
         let disk_outcome = DiskOutcome { files, bytes, errors };
 
         // 4. index last: a mid-run failure then leaves harmless orphans only
-        let (index, mut warnings) = self.delete_index(&plan.all_ids)?;
+        let (index, warnings) = self.delete_index(&plan.all_ids)?;
 
         // 5. integrity verify + auto-restore on failure
         let mut after = self.integrity_snapshot();
@@ -678,7 +680,6 @@ impl Store {
             }
         }
 
-        let _ = &mut warnings;
         Ok(DeleteResult {
             backup_dir: backup_dir.to_string_lossy().to_string(),
             roots: plan.roots,
@@ -795,122 +796,16 @@ impl Store {
 
     fn delete_content(&self, ids: &[String]) -> Result<Vec<RowCount>> {
         let mut con = open_rw(&self.paths.db_path)?;
-        let tables = existing_tables(&con);
         let tx = con.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // steps are (re)computed inside the transaction so deletion always
+        // acts on the row set the plan describes
+        let steps = cascade_steps(&tx, ids)?;
         let mut out = Vec::new();
-
-        for t in CHILD_TABLES {
-            if tables.contains(*t) {
-                let sql = format!("DELETE FROM {t} WHERE session_id IN ({})", qm(ids.len()));
-                let n = tx.execute(&sql, params_from_iter(ids.iter()))?;
-                out.push(RowCount {
-                    table: t.to_string(),
-                    rows: n as i64,
-                });
-            }
+        for s in &steps {
+            let sql = format!("DELETE FROM {} WHERE {}", s.table, s.where_sql);
+            let n = tx.execute(&sql, params_from_iter(s.params.iter()))?;
+            out.push(RowCount { table: s.table.clone(), rows: n as i64 });
         }
-        if tables.contains("session_task_link") {
-            let sql = format!(
-                "DELETE FROM session_task_link WHERE parent_session_id IN ({0}) \
-                 OR child_session_id IN ({0})",
-                qm(ids.len())
-            );
-            let n = tx.execute(&sql, params_from_iter(ids.iter().chain(ids.iter())))?;
-            out.push(RowCount {
-                table: "session_task_link".into(),
-                rows: n as i64,
-            });
-        }
-        if tables.contains("workflow_run") {
-            let sql = format!(
-                "SELECT id FROM workflow_run WHERE parent_session_id IN ({})",
-                qm(ids.len())
-            );
-            let run_ids: Vec<String> = tx
-                .prepare(&sql)?
-                .query_map(params_from_iter(ids.iter()), |r| r.get(0))?
-                .filter_map(|r| r.ok())
-                .collect();
-            if !run_ids.is_empty() {
-                for t in ["workflow_event", "workflow_activity"] {
-                    if tables.contains(t) {
-                        let sql = format!(
-                            "DELETE FROM {t} WHERE run_id IN ({})",
-                            qm(run_ids.len())
-                        );
-                        let n = tx.execute(&sql, params_from_iter(run_ids.iter()))?;
-                        out.push(RowCount {
-                            table: t.to_string(),
-                            rows: n as i64,
-                        });
-                    }
-                }
-                let sql = format!("DELETE FROM workflow_run WHERE id IN ({})", qm(run_ids.len()));
-                let n = tx.execute(&sql, params_from_iter(run_ids.iter()))?;
-                out.push(RowCount {
-                    table: "workflow_run".into(),
-                    rows: n as i64,
-                });
-            }
-        }
-        if tables.contains("dwf_run") {
-            let sql = format!(
-                "SELECT id FROM dwf_run WHERE parent_session_id IN ({})",
-                qm(ids.len())
-            );
-            let dwf_ids: Vec<String> = tx
-                .prepare(&sql)?
-                .query_map(params_from_iter(ids.iter()), |r| r.get(0))?
-                .filter_map(|r| r.ok())
-                .collect();
-            // children first so the order stays valid even with FKs enforced
-            if !dwf_ids.is_empty() {
-                for t in ["dwf_node", "dwf_event"] {
-                    if tables.contains(t) {
-                        let sql =
-                            format!("DELETE FROM {t} WHERE run_id IN ({})", qm(dwf_ids.len()));
-                        let n = tx.execute(&sql, params_from_iter(dwf_ids.iter()))?;
-                        out.push(RowCount {
-                            table: t.to_string(),
-                            rows: n as i64,
-                        });
-                    }
-                }
-            }
-            if tables.contains("dwf_actor") {
-                let sql = if dwf_ids.is_empty() {
-                    format!(
-                        "DELETE FROM dwf_actor WHERE session_id IN ({})",
-                        qm(ids.len())
-                    )
-                } else {
-                    format!(
-                        "DELETE FROM dwf_actor WHERE run_id IN ({0}) OR session_id IN ({1})",
-                        qm(dwf_ids.len()),
-                        qm(ids.len())
-                    )
-                };
-                let n = tx.execute(&sql, params_from_iter(dwf_ids.iter().chain(ids.iter())))?;
-                out.push(RowCount {
-                    table: "dwf_actor".into(),
-                    rows: n as i64,
-                });
-            }
-            if !dwf_ids.is_empty() {
-                let sql = format!("DELETE FROM dwf_run WHERE id IN ({})", qm(dwf_ids.len()));
-                let n = tx.execute(&sql, params_from_iter(dwf_ids.iter()))?;
-                out.push(RowCount {
-                    table: "dwf_run".into(),
-                    rows: n as i64,
-                });
-            }
-        }
-        let sql = format!("DELETE FROM session WHERE id IN ({})", qm(ids.len()));
-        let n = tx.execute(&sql, params_from_iter(ids.iter()))?;
-        out.push(RowCount {
-            table: "session".into(),
-            rows: n as i64,
-        });
 
         tx.commit()?;
         let _ = con.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
@@ -930,6 +825,7 @@ impl Store {
 
         for (t, col) in [
             ("task_group_members", "task_id"),
+            ("task_group_admissions", "task_id"),
             ("automation_runs", "session_id"),
             ("off_peak_tasks", "session_id"),
         ] {

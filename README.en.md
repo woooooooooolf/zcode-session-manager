@@ -39,8 +39,9 @@ were uploaded, when, how large, server-accepted or not — exportable as CSV evi
   raw model I/O records and on-disk artifacts
 - **Privacy cleaner**: a separate tab inventories what ZCode keeps outside the session
   databases — workspace snapshots (upload traces), telemetry device ids, desktop / CLI logs,
-  crash dumps, session visualization fragments, the embedded browser profile, recent projects,
-  the updater cache and agent memories — cleaned per selected category
+  crash dumps, session visualization fragments, database migration backups, the embedded
+  browser profile, recent projects, the updater cache and agent memories — cleaned per
+  selected category
 - **Privacy report**: read-only table of which workspaces / files were packaged for upload,
   with times, encrypted sizes, server-acceptance and failed retries; exportable as CSV
 - **Switch hardening**: one click force-disables ZCode's upload-related toggles
@@ -77,8 +78,8 @@ Deletion is serious. Four safeguards keep it **controlled and reversible**:
 
 Deletion scope (transparency): content database rows, raw model I/O records (rollout), execution
 caches (exec / artifacts / image-cache / agents) and desktop index rows; shared data such as
-`v2\checkpoints\`, `v2\visualizations\` and `memories\` is never touched by session deletion (the
-Privacy tab handles those separately).
+`v2\checkpoints\`, `v2\visualizations\`, `backup\` and `memories\` is never touched by session
+deletion (the Privacy tab handles those separately).
 
 ## Privacy cleaner
 

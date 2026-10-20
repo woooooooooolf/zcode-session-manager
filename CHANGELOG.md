@@ -3,6 +3,44 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [1.5.0] - 2026-10-20
+<!-- zh -->
+**基于 ZCode 3.16.2（桌面 3.16.2.8769 / 引擎 0.16.9）实测验证。** 3.15.3 → 3.16.2 的两批数据库迁移（db.sqlite 0023–0024、tasks-index 0004/0006）引入了软删标志、迁移备份与新索引表，本次全部适配，并清理内部历史包袱。
+### 新增
+- 适配 ZCode 3.16.2 的本地数据结构变更：
+  - 索引清理新增 `task_group_admissions`（按 `task_id` 关联会话，3.16.2 新表），删除会话时同步清理，此前会残留孤儿行。
+  - “已删除”标志现在合并三处软删记录：索引 `tasks.deleted`（3.15+）、索引 `tasks.cli_deleted`（CLI 侧同步，3.16.2+）、正文 `session.time_deleted`（3.16.2+）；旧版缺列均按未删除容错。
+  - 隐私清理新增 **数据库迁移备份** 类别（`backup\`，3.16.2 起 ZCode 升级数据库前自动留存的受影响表副本）：保留已删会话的标题 / 路径等元数据（不含对话正文），同时是迁移失败时的回滚依据——默认不勾选，确认弹窗有专门警告。
+- 列表徽标增加悬停提示（tooltips），说明每个标记的含义与数据来源。
+### 优化
+- 重构删除级联：`plan_delete`（预览计数）与 `delete_content`（实际删除）此前是逐表平行维护的两份逻辑，本次合并为单一来源的级联步骤表，杜绝“改一处漏一处”（`task_group_admissions` 缺口正源于此结构）。
+- 清理死代码：移除 `list_sessions` 的无用 `seen` 集合、`plan_delete` 的无用 `known` 集合与 `execute_delete` 的占位 `let _ = &mut warnings`；孤立无引用的 `badge.*.tip` 文案键改为 `badge.tip.*` 并真正接入徽标悬停提示。
+<!-- en -->
+### Added
+- Compatible with the local data changes of ZCode 3.16.2 (desktop 3.16.2.8769 /
+  engine 0.16.9; verified 2026-10-20):
+  - index cleanup now also clears `task_group_admissions` (task_id-linked, new
+    in 3.16.2) — previously left orphaned rows behind.
+  - the "deleted" flag now unions all three soft-delete markers: index
+    `tasks.deleted` (3.15+), index `tasks.cli_deleted` (CLI-side sync,
+    3.16.2+) and content `session.time_deleted` (3.16.2+); missing columns
+    in older layouts degrade to "not deleted".
+  - new privacy-cleaner category **Database migration backups** (`backup\`,
+    table copies ZCode takes before upgrading a database since 3.16.2): they
+    retain metadata of deleted sessions (titles/paths, no conversation
+    bodies) and double as the migration rollback copy — off by default with
+    a dedicated warning in the confirm dialog.
+  - list badges gained hover tooltips explaining each flag and its source.
+### Changed
+- refactored the deletion cascade: `plan_delete` (preview counts) and
+  `delete_content` (actual deletes) were two hand-maintained parallel copies;
+  both now build from one cascade-step table so they can never drift apart
+  again (the `task_group_admissions` gap came from exactly that structure).
+- dead code removed: the unused `seen` set in `list_sessions`, unused `known`
+  set in `plan_delete` and the placeholder `let _ = &mut warnings`; the
+  orphaned `badge.*.tip` i18n keys became `badge.tip.*` and are now actually
+  wired to badge hover tooltips.
+
 ## [1.4.1] - 2026-10-15
 <!-- zh -->
 ### 新增

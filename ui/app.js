@@ -26,7 +26,7 @@ let LAST_RESULT = null; // backup dir of the last delete, for "open folder"
 let SCAN_ERROR = null;
 let PRIVACY = null; // privacy_scan payload (entries, switches)
 let PRIVACY_SEL = new Set();
-const PRIVACY_OFF_BY_DEFAULT = new Set(["browser_profile", "agent_memories", "recent_projects"]); // destructive side effects / wipes the ZCode session list
+const PRIVACY_OFF_BY_DEFAULT = new Set(["browser_profile", "agent_memories", "recent_projects", "migration_backups"]); // destructive side effects / wipes the ZCode session list / drops ZCode's own migration rollback copies
 let PRIVACY_SCANNED = false;
 let FILTER = new Set(); // categories: active/archived/pinned/child/ghost (empty = all)
 let SORT = { key: "updated", dir: "desc" };
@@ -514,7 +514,13 @@ function renderTable() {
     tr.appendChild(tdTitle);
 
     const tdFlags = el("td", "cell-flags");
-    const chip = (cls, key) => tdFlags.appendChild(el("span", `badge ${cls}`, t(key)));
+    const chip = (cls, key) => {
+      const tipKey = `badge.tip.${key.slice(5)}`; // chip.archived -> badge.tip.archived
+      const tip = t(tipKey);
+      const span = el("span", `badge ${cls}`, t(key));
+      if (tip && tip !== tipKey) span.title = tip;
+      tdFlags.appendChild(span);
+    };
     if (s.ghost) chip("badge-ghost", "chip.ghost");
     if (s.archived) chip("badge-a", "chip.archived");
     if (s.deleted) chip("badge-d", "chip.deleted");
@@ -1061,6 +1067,9 @@ async function openPrivacyClean() {
   }
   if (ids.includes("agent_memories")) {
     body.appendChild(el("p", "restore-warn", t("privacy.warnMemories")));
+  }
+  if (ids.includes("migration_backups")) {
+    body.appendChild(el("p", "restore-warn", t("privacy.warnBackups")));
   }
   body.appendChild(el("p", "backup-note", t("privacy.noBackupNote")));
 
