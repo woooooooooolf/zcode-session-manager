@@ -1,6 +1,6 @@
 param(
     [string]$Lang = "zh",
-    [string]$DemoDir = "D:\zsm-demo\zcode",
+    [string]$DemoDir = "D:\AIWorkSpace_ZCode\zsm-demo\zcode",
     [int]$LaunchMs = 3500,
     [int]$PrivacySettleMs = 4500
 )

@@ -83,7 +83,7 @@ def sid(key):
 
 def pick_data_root():
     """Fabricated, neutral-looking locations for the demo data."""
-    candidates = [r"C:\Users\demo\.zcode", r"D:\zsm-demo\zcode"]
+    candidates = [r"C:\Users\demo\.zcode", r"D:\AIWorkSpace_ZCode\zsm-demo\zcode"]
     for c in candidates:
         try:
             os.makedirs(os.path.join(c, "cli", "db"), exist_ok=True)
