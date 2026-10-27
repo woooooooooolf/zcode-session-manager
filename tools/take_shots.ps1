@@ -1,6 +1,9 @@
 param(
     [string]$Lang = "zh",
-    [string]$DemoDir = "D:\AIWorkSpace_ZCode\zsm-demo\zcode",
+    # Repo-relative by default (self-contained with the project). NOTE: the
+    # sessions-tab footer displays the db path — pass a neutral-looking
+    # -DemoDir if you prefer that in public screenshots.
+    [string]$DemoDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "demo-data\zcode"),
     [int]$LaunchMs = 3500,
     [int]$PrivacySettleMs = 4500
 )

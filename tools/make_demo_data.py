@@ -83,7 +83,10 @@ def sid(key):
 
 def pick_data_root():
     """Fabricated, neutral-looking locations for the demo data."""
-    candidates = [r"C:\Users\demo\.zcode", r"D:\AIWorkSpace_ZCode\zsm-demo\zcode"]
+    # repo-relative first: keeps the dataset self-contained with the project
+    # (survives relocation of the whole repo; see demo-data/ in .gitignore).
+    # For a neutral-looking path in screenshot footers, pass --out explicitly.
+    candidates = [os.path.join(BASE, "demo-data", "zcode"), r"C:\Users\demo\.zcode"]
     for c in candidates:
         try:
             os.makedirs(os.path.join(c, "cli", "db"), exist_ok=True)

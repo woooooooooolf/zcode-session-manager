@@ -9,6 +9,10 @@ dist/
 __pycache__/
 *.log
 
+# Fictional demo dataset for README screenshots — regenerated on demand by
+# tools/make_demo_data.py (which rmtree's + rebuilds it), so it is not tracked
+demo-data/
+
 # OS
 .DS_Store
 Thumbs.db
