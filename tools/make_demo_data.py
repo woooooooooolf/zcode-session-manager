@@ -3,8 +3,7 @@
 The schema mirrors the REAL ZCode 3.16.2 (desktop 3.16.2.8769 / engine 0.16.9)
 layout verified on 2026-10-20 — same table sets, same column names, message
 JSON in the real shape (role + semantics.origin + source), soft-deleted
-session included so every list badge can appear, plus the privacy-side data
-(visualizations, migration backups, checkpoints, …). All content is fiction.
+session included so every list badge can appear. All content is fiction.
 
 Usage:
     python tools/make_demo_data.py [--lang zh|en] [--out DIR]
@@ -332,7 +331,6 @@ def main():
             f.write(bytes(rng.getrandbits(8) for _ in range(kb * 1024)))
 
     disk_demo(cli, rng)
-    privacy_demo(cli, v2, args.lang)
 
     print(f"demo data ({args.lang}) written to {data_root}")
 
@@ -505,143 +503,6 @@ def disk_demo(cli, rng):
     os.makedirs(os.path.join(cli, "exec", "bash-startup", sid("perf")), exist_ok=True)
     with open(os.path.join(cli, "exec", "bash-startup", sid("perf"), "env.json"), "w") as f:
         f.write("{}\n")
-
-
-FAKE_MANIFEST_FILES = [
-    (".git/HEAD", 21), (".git/config", 401), (".git/description", 73),
-    (".git/FETCH_HEAD", 114), (".git/COMMIT_EDITMSG", 256),
-    (".git/hooks/applypatch-msg.sample", 478), (".git/hooks/commit-msg.sample", 896),
-    (".git/objects/pack/pack-3f2a9c.idx", 53412),
-    (".git/objects/pack/pack-3f2a9c.pack", 382104),
-    ("README.md", 1834), ("Makefile", 987), ("src/main.c", 15320),
-    ("src/driver/uart.c", 9821), ("src/driver/uart.h", 2140),
-    ("firmware/boot.bin", 65536), ("tools/flash.py", 2210),
-]
-
-FAKE_LOG_LINE = "[{t}] [info] [host] demo log line for screenshots — settings snapshot written, workspace scanned\n"
-
-
-def _fake_log(path, lines):
-    with open(path, "w", encoding="utf-8") as f:
-        for i in range(lines):
-            f.write(FAKE_LOG_LINE.format(t=f"2026-09-1{6 + i % 3} 2{i % 4}:0{i % 6}:00.000"))
-
-
-def _fake_sqlite_bytes(rng, size):
-    return b"SQLite format 3\x00" + bytes(rng.getrandbits(8) for _ in range(size))
-
-
-def privacy_demo(cli, v2, lang):
-    """Fabricate the non-session privacy data: workspace-snapshot upload
-    traces, telemetry ids, logs, crash dumps, agent memories, session
-    visualizations, pre-migration backups and the desktop setting file —
-    everything the Privacy tab inventories."""
-    # two workspaces with repo-snapshot checkpoints (upload evidence)
-    for ws, cdir, enc, ws_bytes, failures in [
-        (r"D:\work\embedded-fw", "5f3a9c21d7e8", 77_560, 2_264_294, 2),
-        (r"C:\Users\demo\projects\report", "a71c40e8b9d2", 389_051, 689_990, None),
-    ]:
-        cp = os.path.join(v2, "checkpoints", cdir)
-        man = os.path.join(cp, "manifests")
-        extra = os.path.join(cp, "extra-manifests")
-        os.makedirs(man, exist_ok=True)
-        os.makedirs(extra, exist_ok=True)
-        mh = "c82c618db02167686012de2b59abdda1deae45a9a6fc6766b052b65352f22afb"
-        with open(os.path.join(man, mh + ".json"), "w", encoding="utf-8") as f:
-            json.dump({
-                "schema": "repo_snapshot_manifest/v2",
-                "workspaceKey": ws,
-                "createdAt": NOW - 5 * D,
-                "files": [{"path": p, "sizeBytes": s} for p, s in FAKE_MANIFEST_FILES],
-            }, f)
-        with open(os.path.join(extra, "3fbd07e9c73740ab98cb2f06c97abca5721b10d24a7fc8e5883206f4b1bbdcdb.json"), "w") as f:
-            json.dump({
-                "schema": "repo_snapshot_extra_manifest/v1",
-                "createdAt": NOW - 5 * D,
-                "groups": [{"groupId": "global-configs", "changePolicy": "rare",
-                            "files": [{"path": "settings.behavior.json", "sizeBytes": 760,
-                                       "source": "app-memory:global-settings"}]}],
-                "stats": {"includedFileCount": 1, "includedBytes": 760},
-            }, f)
-        state = {
-            "workspacePath": ws,
-            "workspaceKey": ws,
-            "lastCompressedSize": {
-                "encryptedSizeBytes": enc,
-                "workspaceSizeBytes": ws_bytes,
-                "manifestHash": mh,
-                "recordedAt": NOW - 5 * D,
-            },
-            "lastAcceptedManifestHash": mh,
-            "lastAcceptedManifestPath": os.path.join(man, mh + ".json"),
-        }
-        if failures is not None:
-            state["failureCount"] = failures
-        with open(os.path.join(cp, "state.json"), "w") as f:
-            json.dump(state, f)
-
-    with open(os.path.join(v2, "telemetry-state.json"), "w") as f:
-        json.dump({"deviceMid": "5b7d2f10-9c3e-4a8b-8f2d-6e1c0a4b9d37",
-                   "lastDailyActiveDate": "2026-09-18"}, f)
-
-    os.makedirs(os.path.join(v2, "logs"), exist_ok=True)
-    _fake_log(os.path.join(v2, "logs", "2026-09-17.log"), 900)
-    _fake_log(os.path.join(v2, "logs", "2026-09-18.log"), 600)
-
-    os.makedirs(os.path.join(v2, "crash", "live"), exist_ok=True)
-    with open(os.path.join(v2, "crash", "live", "b0f2c1a4.dmp"), "wb") as f:
-        f.write(bytes(random.Random(7).getrandbits(8) for _ in range(120 * 1024)))
-
-    os.makedirs(os.path.join(cli, "log"), exist_ok=True)
-    _fake_log(os.path.join(cli, "log", "zcode-2026-09-17.jsonl"), 1200)
-    _fake_log(os.path.join(cli, "log", "zcode-2026-09-18.jsonl"), 800)
-
-    mem = os.path.join(cli, "memories", "projects", "demo")
-    os.makedirs(mem, exist_ok=True)
-    with open(os.path.join(cli, "memories", "MEMORY.md"), "w", encoding="utf-8") as f:
-        f.write("# Memory Index\n\n- [Demo project](projects/demo/demo.md) — fictional\n")
-    with open(os.path.join(mem, "demo.md"), "w", encoding="utf-8") as f:
-        f.write("---\nname: demo\ndescription: fictional memory for screenshots\n---\nDemo content.\n")
-
-    # Gen UI visualization fragments (privacy category session_visualizations)
-    rng = random.Random(11)
-    chart = ("9b0077688759c96e2c3c0c6e00b7fbfc78a5c1e702b26316ef7472f33d727007",
-             "<html><body><svg width='320' height='180'><!-- demo chart --></svg></body></html>")
-    for h in ("0a039e8968c925ed753fbbbc29f823ca8cb687afaa2cc7417d3c837085e79670",):
-        os.makedirs(os.path.join(v2, "visualizations", h), exist_ok=True)  # empty like real
-    d = os.path.join(v2, "visualizations", chart[0])
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, "uart-baud-tree.html"), "w", encoding="utf-8") as f:
-        f.write(chart[1])
-
-    # pre-migration backups (privacy category migration_backups), one set per
-    # database like the real 3.16.2 upgrade leaves behind
-    for name, migs in [
-        ("cli-1792484364119-c292f57f-939e-42dd-86b9-35058ec229fc",
-         ["0023_session_soft_delete_outcome", "0024_session_database_identity"]),
-        ("tasks_index-1792484363233-c1639138-5edf-4fe8-8aeb-d5cfcac53f93",
-         ["0004_project_execution_scopes"]),
-        ("tasks_schema-1792484363181-eb153960-0226-4e08-a405-0c56cecb0269", []),
-    ]:
-        d = os.path.join(os.path.dirname(cli), "backup", name)
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "tables.sqlite"), "wb") as f:
-            f.write(_fake_sqlite_bytes(rng, 24 * 1024))
-        with open(os.path.join(d, "backup.json"), "w", encoding="utf-8") as f:
-            json.dump({"version": 1, "database": name.split("-")[0], "migrations": migs,
-                       "tables": [{"name": "session", "columns": ["id", "title"]}]}, f)
-
-    with open(os.path.join(v2, "setting.json"), "w", encoding="utf-8") as f:
-        json.dump({
-            "recentProjects": [r"D:\work\embedded-fw", r"C:\Users\demo\projects\report"],
-            "lastWorkspaceSession": [
-                {"kind": "local", "workspacePath": r"D:\work\embedded-fw", "workspacePurpose": "project"},
-            ],
-            "locale": "zh-CN" if lang == "zh" else "en-US",
-            "optimizeAgentExperienceEnabled": False,
-            "repoSnapshotIndexingEnabled": True,
-            "instantGrepIndexingEnabled": False,
-        }, f)
 
 
 if __name__ == "__main__":
