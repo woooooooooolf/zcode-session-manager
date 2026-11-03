@@ -115,6 +115,19 @@ fn check_content_db(con: &Connection, problems: &mut Vec<String>) {
             problems.push(format!("db.sqlite: `{t}` is missing column `{col}`"));
         }
     }
+    // session_task_link (ZCode 3.16.3+): sub-agent session edges; the cascade
+    // deletes by both endpoint columns and follows them when expanding the
+    // session tree, so a changed shape must stop operations, not orphan rows.
+    if tables.contains("session_task_link") {
+        let cols = columns(con, "session_task_link");
+        for req in ["parent_session_id", "child_session_id"] {
+            if !cols.contains(req) {
+                problems.push(format!(
+                    "db.sqlite: `session_task_link` is missing column `{req}`"
+                ));
+            }
+        }
+    }
 }
 
 fn check_index_db(con: &Connection, problems: &mut Vec<String>) {

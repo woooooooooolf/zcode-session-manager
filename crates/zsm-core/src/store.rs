@@ -490,9 +490,13 @@ impl Store {
 
     // ---------------- cascade & plan ----------------
 
-    /// roots plus every descendant session (BFS over session.parent_id).
+    /// roots plus every descendant session. Children are discovered over
+    /// `session.parent_id` and — ZCode 3.16.3+ — over the parent/child edges
+    /// in `session_task_link`, where sub-agent runs register their spawned
+    /// sessions; missing either source would strand those children as orphans.
     pub fn cascade_ids(&self, roots: &[String]) -> Result<Vec<String>> {
         let con = open_ro(&self.paths.db_path)?;
+        let has_links = existing_tables(&con).contains("session_task_link");
         let mut all: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         let mut frontier: Vec<String> = roots.to_vec();
@@ -509,15 +513,30 @@ impl Store {
                 seen.insert(b.clone());
                 all.push(b.clone());
             }
+            let mut kids: Vec<String> = Vec::new();
             let sql = format!(
                 "SELECT id FROM session WHERE parent_id IN ({})",
                 qm(batch.len())
             );
             let mut stmt = con.prepare(&sql)?;
-            frontier = stmt
-                .query_map(params_from_iter(batch.iter()), |r| r.get::<_, String>(0))?
-                .filter_map(|r| r.ok())
-                .collect();
+            kids.extend(
+                stmt.query_map(params_from_iter(batch.iter()), |r| r.get::<_, String>(0))?
+                    .filter_map(|r| r.ok()),
+            );
+            if has_links {
+                let sql = format!(
+                    "SELECT child_session_id FROM session_task_link WHERE parent_session_id IN ({})",
+                    qm(batch.len())
+                );
+                let mut stmt = con.prepare(&sql)?;
+                kids.extend(
+                    stmt.query_map(params_from_iter(batch.iter()), |r| r.get::<_, String>(0))?
+                        .filter_map(|r| r.ok()),
+                );
+            }
+            kids.sort();
+            kids.dedup();
+            frontier = kids;
         }
         Ok(all)
     }

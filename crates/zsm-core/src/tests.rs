@@ -521,3 +521,57 @@ fn refuse_and_full_mode_interplay() {
         .is_ok());
 }
 
+#[test]
+fn cascade_follows_session_task_link_edges() {
+    let fx = make_fixture();
+    // sub-agent child registered only in session_task_link (parent_id NULL):
+    // deleting its root must reach it through the link edge, not strand it
+    const LINK_ONLY: &str = "sess_linkonly-0000-0000-0000-000000000005";
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    con.execute(
+        "INSERT INTO session (id, parent_id, directory, title, time_created, time_updated) \
+         VALUES (?1, NULL, 'D:\\proj\\demo', 'link-only', 1000, 2000)",
+        [LINK_ONLY],
+    )
+    .unwrap();
+    con.execute(
+        "INSERT INTO session_task_link VALUES ('l2', ?1, ?2)",
+        rusqlite::params![CHILD, LINK_ONLY],
+    )
+    .unwrap();
+    con.close().unwrap();
+
+    let plan = fx.store.plan_delete(&[ROOT.to_string()]).unwrap();
+    assert!(plan.all_ids.iter().any(|id| id == LINK_ONLY));
+
+    fx.store
+        .execute_delete_with_policy(&[ROOT.to_string()], RunningPolicy::Refuse)
+        .unwrap();
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM session_task_link"), 0);
+    assert_eq!(
+        count(
+            &con,
+            "SELECT COUNT(*) FROM session WHERE id = 'sess_linkonly-0000-0000-0000-000000000005'"
+        ),
+        0
+    );
+}
+
+#[test]
+fn compat_flags_session_task_link_shape() {
+    let fx = make_fixture();
+    let con = Connection::open(fx.paths.db_path.clone()).unwrap();
+    con.execute_batch("ALTER TABLE session_task_link DROP COLUMN child_session_id;")
+        .unwrap();
+    con.close().unwrap();
+    let report = crate::compat::check(&fx.paths);
+    assert!(!report.ok);
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("session_task_link"))
+    );
+}
+
