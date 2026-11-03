@@ -4619,11 +4619,9 @@ dependencies = [
 name = "zsm-gui"
 version = "1.5.0"
 dependencies = [
- "chrono",
  "dirs",
  "serde",
  "serde_json",
- "sysinfo",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

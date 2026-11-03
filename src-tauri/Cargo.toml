@@ -15,8 +15,6 @@ zsm-core = { path = "../crates/zsm-core" }
 serde.workspace = true
 serde_json.workspace = true
 dirs.workspace = true
-chrono.workspace = true
-sysinfo.workspace = true
 
 [lib]
 name = "zsm_gui_lib"

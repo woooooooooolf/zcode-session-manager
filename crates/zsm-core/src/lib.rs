@@ -7,7 +7,6 @@ pub mod disk;
 pub mod error;
 pub mod integrity;
 pub mod paths;
-pub mod privacy;
 pub mod store;
 #[cfg(test)]
 mod tests;
