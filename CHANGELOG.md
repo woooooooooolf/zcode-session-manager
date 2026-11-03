@@ -3,13 +3,14 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
-## [Unreleased]
+## [1.6.0] - 2026-11-03
 <!-- zh -->
-**基于 ZCode 3.16.3（桌面 3.16.3.8992 / 实测 2026-11-03）验证会话管理功能。** 工具回归纯会话管理。
+**基于 ZCode 3.17.2（桌面 3.17.2.9661 / 实测 2026-11-03）验证会话管理功能。** 工具回归纯会话管理。
 ### 移除
 - **隐私清理选项卡及其全部后端**（zsm-core::privacy、5 个 Tauri 命令、隐私报告与 CSV 导出、上传相关开关加固）：ZCode 已移除 2026-09 曝光的工作区打包上传行为，该功能失去针对目标，而追逐 ZCode 每个版本目录布局的持续维护成本不成比例。工具回归会话管理主线；`v2\checkpoints\`、遥测标识、日志等非会话数据今后不再由本工具处理。
 ### 修复
 - 删除级联适配 ZCode 3.16.3 新增的 `session_task_link` 表（子代理运行登记的父子会话边）：此前树展开只走 `session.parent_id`，仅通过该表登记的子会话会在删除父会话时被遗漏为孤儿；现在 `session_task_link` 边与 `parent_id` 并列为子会话发现来源，兼容性检查也会对该表的列形状把关（不符即拒绝操作）。
+- 索引清理适配 ZCode 3.17.2 新增的 `session_creation_commands` 表（每会话的创建命令记录，`session_id` 与 `task_id` 同一 id 空间）：删除会话时同步清理，避免残留孤儿行。
 <!-- en -->
 ### Removed
 - **the Privacy cleaner tab and its entire backend** (`zsm-core::privacy`, five Tauri
@@ -25,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are
   stranded as an orphan when its parent was deleted. Link edges now sit beside `parent_id`
   as a child-discovery source, and the compatibility check gates the table's column shape
   (operations are refused on a drifted layout).
+- index cleanup covers `session_creation_commands` (added in ZCode 3.17.2, a per-session
+  creation-command log whose `session_id` shares the `task_id` id space): the rows are now
+  removed together with the session instead of lingering as orphans.
 
 ## [1.5.0] - 2026-10-20
 <!-- zh -->
