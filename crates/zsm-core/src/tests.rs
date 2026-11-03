@@ -52,6 +52,7 @@ CREATE TABLE task_group_admissions (workspace_key TEXT, task_id TEXT, user_organ
 CREATE TABLE automation_runs (run_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE off_peak_tasks (off_peak_task_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE automations (automation_id TEXT PRIMARY KEY, target_task_id TEXT, enabled INTEGER DEFAULT 1);
+CREATE TABLE session_creation_commands (workspace_key TEXT, client_id TEXT, command_id TEXT, session_id TEXT);
 ";
 
 const ROOT: &str = "sess_root0000-0000-0000-000000000001";
@@ -134,6 +135,18 @@ fn make_fixture() -> Fixture {
     con.execute(
         "INSERT INTO task_group_admissions VALUES ('D:\\proj\\demo', ?1, 0)",
         [ROOT],
+    )
+    .unwrap();
+    // session_creation_commands (ZCode 3.17.2+): one edge for the deleted
+    // tree, one for the surviving session
+    con.execute(
+        "INSERT INTO session_creation_commands VALUES ('D:\\proj\\demo', 'client-1', 'cmd-1', ?1)",
+        [ROOT],
+    )
+    .unwrap();
+    con.execute(
+        "INSERT INTO session_creation_commands VALUES ('D:\\proj\\demo', 'client-1', 'cmd-2', ?1)",
+        [KEEP],
     )
     .unwrap();
     con.close().unwrap();
@@ -298,6 +311,16 @@ fn execute_delete_cascades_content_disk_index() {
     assert_eq!(count(&con, "SELECT COUNT(*) FROM tasks"), 2);
     assert_eq!(count(&con, "SELECT COUNT(*) FROM task_group_members"), 0);
     assert_eq!(count(&con, "SELECT COUNT(*) FROM task_group_admissions"), 0);
+    // session_creation_commands (ZCode 3.17.2+): the deleted tree's edge is
+    // gone, the surviving session's edge stays
+    assert_eq!(
+        count(
+            &con,
+            &format!("SELECT COUNT(*) FROM session_creation_commands WHERE session_id = '{ROOT}'")
+        ),
+        0
+    );
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM session_creation_commands"), 1);
     con.close().unwrap();
 
     // backup contains everything needed for a restore

@@ -847,6 +847,8 @@ impl Store {
             ("task_group_admissions", "task_id"),
             ("automation_runs", "session_id"),
             ("off_peak_tasks", "session_id"),
+            // ZCode 3.17.2: per-session creation-command log in the index
+            ("session_creation_commands", "session_id"),
         ] {
             if tables.contains(t) {
                 let sql = format!("DELETE FROM {t} WHERE {col} IN ({})", qm(ids.len()));
