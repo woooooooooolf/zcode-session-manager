@@ -3,6 +3,29 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [Unreleased]
+<!-- zh -->
+**基于 ZCode 3.16.3（桌面 3.16.3.8992 / 实测 2026-11-03）验证会话管理功能。** 工具回归纯会话管理。
+### 移除
+- **隐私清理选项卡及其全部后端**（zsm-core::privacy、5 个 Tauri 命令、隐私报告与 CSV 导出、上传相关开关加固）：ZCode 已移除 2026-09 曝光的工作区打包上传行为，该功能失去针对目标，而追逐 ZCode 每个版本目录布局的持续维护成本不成比例。工具回归会话管理主线；`v2\checkpoints\`、遥测标识、日志等非会话数据今后不再由本工具处理。
+### 修复
+- 删除级联适配 ZCode 3.16.3 新增的 `session_task_link` 表（子代理运行登记的父子会话边）：此前树展开只走 `session.parent_id`，仅通过该表登记的子会话会在删除父会话时被遗漏为孤儿；现在 `session_task_link` 边与 `parent_id` 并列为子会话发现来源，兼容性检查也会对该表的列形状把关（不符即拒绝操作）。
+<!-- en -->
+### Removed
+- **the Privacy cleaner tab and its entire backend** (`zsm-core::privacy`, five Tauri
+  commands, the upload-evidence report with CSV export, and the upload-switch hardening):
+  ZCode has removed the workspace-packaging upload behavior exposed in 2026-09, so the
+  feature lost its target while the cost of chasing every ZCode release's directory
+  layout stayed. The tool is a pure session manager again; non-session data such as
+  `v2\checkpoints\`, telemetry ids and logs is no longer handled here.
+### Fixed
+- the deletion cascade now covers `session_task_link` (added in ZCode 3.16.3, holding the
+  parent/child edges that sub-agent runs register): tree expansion previously followed only
+  `session.parent_id`, so a child registered solely through the link table would have been
+  stranded as an orphan when its parent was deleted. Link edges now sit beside `parent_id`
+  as a child-discovery source, and the compatibility check gates the table's column shape
+  (operations are refused on a drifted layout).
+
 ## [1.5.0] - 2026-10-20
 <!-- zh -->
 **基于 ZCode 3.16.2（桌面 3.16.2.8769 / 引擎 0.16.9）实测验证。** 3.15.3 → 3.16.2 的两批数据库迁移（db.sqlite 0023–0024、tasks-index 0004/0006）引入了软删标志、迁移备份与新索引表，本次全部适配，并清理内部历史包袱。
