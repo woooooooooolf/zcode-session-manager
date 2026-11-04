@@ -1,15 +1,15 @@
 param(
     [string]$Lang = "zh",
-    # Repo-relative by default (self-contained with the project). NOTE: the
-    # sessions-tab footer displays the db path — pass a neutral-looking
-    # -DemoDir if you prefer that in public screenshots.
-    [string]$DemoDir = (Join-Path (Split-Path -Parent $PSScriptRoot) "demo-data\zcode"),
-    [int]$LaunchMs = 3500,
-    [int]$PrivacySettleMs = 4500
+    # Throwaway demo dir dedicated to README screenshots. The sessions-tab
+    # footer displays the db path, so a neutral fictional location keeps the
+    # real workspace/home out of public shots. The dir is RECREATED from
+    # scratch by make_demo_data on every run (it rmtree's the target first)
+    # and DELETED again in the finally block — never keep anything real here.
+    [string]$DemoDir = "D:\zsm-demo\zcode",
+    [int]$LaunchMs = 3500
 )
 # Regenerate README screenshots for one language:
 #   <lang>-dark/light/hc.png  (main window, sessions tab, three themes)
-#   <lang>-privacy.png        (privacy tab, dark theme)
 # Writes zsm settings.json pointing at FICTIONAL demo data and ALWAYS
 # restores the original settings afterwards. Settings are written WITHOUT
 # a BOM — a BOM would make serde_json reject the file and the app would
@@ -43,15 +43,15 @@ try {
         Stop-Process -Id $p.Id -Force
         Start-Sleep -Milliseconds 700
     }
-
-    # privacy tab (second tab) on the dark theme
-    Write-ZsmSettings @{ zcodeDir = $DemoDir; language = $Lang; theme = "dark"; idleMinutes = 60; pollSeconds = 4 }
-    $p = Start-Process -PassThru $exe
-    Start-Sleep -Milliseconds $LaunchMs
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "tools\screenshot.ps1") -ProcId $p.Id -out (Join-Path $shots "$Lang-privacy.png") -Click "155,24" -SettleMs $PrivacySettleMs
-    Stop-Process -Id $p.Id -Force
 } finally {
     if ($hadSettings) { [System.IO.File]::WriteAllText($settings, $backup) }
     else { Remove-Item $settings -ErrorAction SilentlyContinue }
+    # Remove the throwaway demo dir (freshly created by make_demo_data
+    # above); also drop the now-empty D:\zsm-demo parent.
+    if (Test-Path $DemoDir) {
+        Remove-Item -Recurse -Force $DemoDir
+        $parent = Split-Path -Parent $DemoDir
+        if ((Test-Path $parent) -and -not (Get-ChildItem -Force $parent)) { Remove-Item -Force $parent }
+    }
 }
 Write-Output "shots for '$Lang' done -> $shots"
