@@ -13,7 +13,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 dirs = "7"
 chrono = "0.4"
-sysinfo = "0.39"
+sysinfo = "0.40"
 
 [profile.release]
 strip = true
