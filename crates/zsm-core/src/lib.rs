@@ -41,10 +41,15 @@ pub fn zcode_running() -> bool {
         _ => {}
     }
     use sysinfo::System;
-    let sys = System::new_all();
     let self_pid = std::process::id();
-    sys.processes().iter().any(|(pid, p)| {
-        pid.as_u32() != self_pid
-            && p.name().to_string_lossy().to_lowercase().contains("zcode")
-    })
+    // sysinfo 0.40: new_all() returns Result. Fail safe — if we cannot list
+    // processes, assume ZCode is running so destructive operations stay blocked.
+    System::new_all()
+        .map(|sys| {
+            sys.processes().iter().any(|(pid, p)| {
+                pid.as_u32() != self_pid
+                    && p.name().to_string_lossy().to_lowercase().contains("zcode")
+            })
+        })
+        .unwrap_or(true)
 }
