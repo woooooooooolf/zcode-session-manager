@@ -849,6 +849,9 @@ impl Store {
             ("off_peak_tasks", "session_id"),
             // ZCode 3.17.2: per-session creation-command log in the index
             ("session_creation_commands", "session_id"),
+            // ZCode 3.18.2: index-side permanent-deletion queue (companion of
+            // db.sqlite's session_purge) — job rows go with the task row
+            ("task_purge", "task_id"),
         ] {
             if tables.contains(t) {
                 let sql = format!("DELETE FROM {t} WHERE {col} IN ({})", qm(ids.len()));

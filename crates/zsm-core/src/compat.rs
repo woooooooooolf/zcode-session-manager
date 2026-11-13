@@ -19,6 +19,16 @@ pub const CHILD_TABLES: &[&str] = &[
     "turn_usage",
     "model_usage",
     "input_history",
+    // ZCode 3.18.2 (engine 0.17.1, migration 0025_session_permanent_deletion):
+    // the native permanent-deletion queue. Rows are per-session job records; we
+    // delete them with the session instead of guessing the `state` machine — if
+    // ZCode enqueued a purge and zsm removes the content first, the end state
+    // is what the purge wanted anyway.
+    "session_purge",
+    // ZCode 3.18.2: live-session liveness registry (owner process). Stale
+    // presence rows for a deleted session would make ZCode think a live
+    // process still owns it.
+    "session_runtime_presence",
 ];
 
 const SESSION_REQUIRED_COLS: &[&str] = &[

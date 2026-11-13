@@ -3,6 +3,31 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [1.6.1] - 2026-11-13
+<!-- zh -->
+**基于 ZCode 3.18.2（桌面 3.18.2.10443 / 引擎 0.17.1 / 实测 2026-11-13）验证会话管理功能。** 本次 ZCode 启动时应用了 `0025_session_permanent_deletion` 迁移（ZCode 原生永久删除功能上线），数据库出现三张 zsm 未覆盖的会话关联表，已全部适配。
+### 修复
+- 删除级联适配 ZCode 3.18.2 新增的两张内容库表：
+  - `session_purge`（原生永久删除的任务队列，按 `session_id` 关联）：zsm 硬删会话时同步清掉队列行，不去猜测其 `state` 状态机——若 ZCode 已入队清除任务而 zsm 先行删净内容，最终态正是清除任务想要的结局。
+  - `session_runtime_presence`（存活会话的进程登记表，按 `session_id` 关联）：残留的 presence 行会让 ZCode 误以为仍有活进程占用该会话，随会话一并清除。
+- 索引清理适配 ZCode 3.18.2 新增的 `task_purge` 表（`session_purge` 的索引侧对应物，按 `task_id` 关联）：随 `tasks` 行同步清除。
+- 兼容性检查对上述三表按"存在即校验 `session_id`/`task_id` 列"把关；实测确认 3.18.2 下 `tasks.worktree_root`（3.18.0）等纯增量列不影响现有读取。
+<!-- en -->
+### Fixed
+- the deletion cascade covers two content-db tables added in ZCode 3.18.2:
+  - `session_purge` (the native permanent-deletion job queue, keyed by `session_id`):
+    zsm removes the queue rows with the session instead of guessing the `state`
+    machine — if ZCode had enqueued a purge and zsm wipes the content first, the
+    end state is exactly what the purge wanted.
+  - `session_runtime_presence` (live-session process registry, keyed by
+    `session_id`): a stale presence row would make ZCode think a live process
+    still owns the deleted session; it goes with the session.
+- index cleanup covers `task_purge` (added in ZCode 3.18.2, the index-side
+  companion of `session_purge`, keyed by `task_id`): removed with the `tasks` row.
+- the compatibility check gates all three tables as "present ⇒ must carry the
+  session/task id column"; verified that purely additive columns such as
+  `tasks.worktree_root` (3.18.0) do not affect existing reads.
+
 ## [1.6.0] - 2026-11-03
 <!-- zh -->
 **基于 ZCode 3.17.2（桌面 3.17.2.9661 / 实测 2026-11-03）验证会话管理功能。** 工具回归纯会话管理。

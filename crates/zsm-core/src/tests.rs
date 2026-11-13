@@ -41,6 +41,8 @@ CREATE TABLE dwf_node (id INTEGER PRIMARY KEY, run_id TEXT);
 CREATE TABLE dwf_event (id INTEGER PRIMARY KEY, run_id TEXT);
 CREATE TABLE dwf_actor (id INTEGER PRIMARY KEY, run_id TEXT, session_id TEXT);
 CREATE TABLE permission (id TEXT PRIMARY KEY, project_id TEXT, data TEXT);
+CREATE TABLE session_purge (session_id TEXT, root_id TEXT, operation_id TEXT, state TEXT);
+CREATE TABLE session_runtime_presence (session_id TEXT, owner_id TEXT, process_id INTEGER);
 ";
 
 const TI_SCHEMA: &str = "
@@ -53,6 +55,7 @@ CREATE TABLE automation_runs (run_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE off_peak_tasks (off_peak_task_id TEXT PRIMARY KEY, session_id TEXT);
 CREATE TABLE automations (automation_id TEXT PRIMARY KEY, target_task_id TEXT, enabled INTEGER DEFAULT 1);
 CREATE TABLE session_creation_commands (workspace_key TEXT, client_id TEXT, command_id TEXT, session_id TEXT);
+CREATE TABLE task_purge (workspace_key TEXT, task_id TEXT, state TEXT);
 ";
 
 const ROOT: &str = "sess_root0000-0000-0000-000000000001";
@@ -118,6 +121,23 @@ fn make_fixture() -> Fixture {
     con.execute("INSERT INTO dwf_run VALUES ('dwf2', ?1)", [KEEP]).unwrap();
     con.execute("INSERT INTO dwf_actor VALUES (2, 'dwf2', ?1)", [KEEP]).unwrap();
     con.execute("INSERT INTO permission VALUES ('perm1', 'proj1', '{}')", []).unwrap();
+    // ZCode 3.18.2: native purge queue row + live-presence row for the deleted
+    // tree, both keyed by session_id; KEEP gets a presence row that must stay
+    con.execute(
+        "INSERT INTO session_purge VALUES (?1, ?1, 'op-1', 'done')",
+        [ROOT],
+    )
+    .unwrap();
+    con.execute(
+        "INSERT INTO session_runtime_presence VALUES (?1, '9700:owner', 9700)",
+        [ROOT],
+    )
+    .unwrap();
+    con.execute(
+        "INSERT INTO session_runtime_presence VALUES (?1, '9700:owner', 9700)",
+        [KEEP],
+    )
+    .unwrap();
     con.close().unwrap();
 
     let v2 = root.join("v2");
@@ -147,6 +167,12 @@ fn make_fixture() -> Fixture {
     con.execute(
         "INSERT INTO session_creation_commands VALUES ('D:\\proj\\demo', 'client-1', 'cmd-2', ?1)",
         [KEEP],
+    )
+    .unwrap();
+    // ZCode 3.18.2: index-side purge queue row for the deleted tree
+    con.execute(
+        "INSERT INTO task_purge VALUES ('D:\\proj\\demo', ?1, 'done')",
+        [ROOT],
     )
     .unwrap();
     con.close().unwrap();
@@ -263,6 +289,16 @@ fn plan_delete_touches_nothing() {
     assert_eq!(plan.counts.iter().find(|c| c.table == "session").unwrap().rows, 2);
     assert_eq!(plan.counts.iter().find(|c| c.table == "dwf_run").unwrap().rows, 1);
     assert_eq!(plan.counts.iter().find(|c| c.table == "dwf_actor").unwrap().rows, 1);
+    // ZCode 3.18.2 purge/presence rows are part of the plan
+    assert_eq!(plan.counts.iter().find(|c| c.table == "session_purge").unwrap().rows, 1);
+    assert_eq!(
+        plan.counts
+            .iter()
+            .find(|c| c.table == "session_runtime_presence")
+            .unwrap()
+            .rows,
+        1
+    );
     assert!(plan.disk_bytes > 0);
 
     // nothing changed
@@ -298,6 +334,10 @@ fn execute_delete_cascades_content_disk_index() {
     assert_eq!(count(&con, "SELECT COUNT(*) FROM dwf_run"), 1);
     assert_eq!(count(&con, "SELECT COUNT(*) FROM dwf_actor"), 1);
     assert_eq!(count(&con, "SELECT COUNT(*) FROM dwf_node"), 0);
+    // ZCode 3.18.2: purge queue row and the tree's presence row are gone,
+    // the surviving session's presence row stays
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM session_purge"), 0);
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM session_runtime_presence"), 1);
     con.close().unwrap();
 
     // disk: root artifacts gone, keep's image-cache preserved
@@ -321,6 +361,8 @@ fn execute_delete_cascades_content_disk_index() {
         0
     );
     assert_eq!(count(&con, "SELECT COUNT(*) FROM session_creation_commands"), 1);
+    // ZCode 3.18.2: index-side purge queue row removed with the task
+    assert_eq!(count(&con, "SELECT COUNT(*) FROM task_purge"), 0);
     con.close().unwrap();
 
     // backup contains everything needed for a restore
