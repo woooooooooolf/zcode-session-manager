@@ -4,15 +4,24 @@
 
 [简体中文](README.md) | English
 
-**Put ZCode session control back where it belongs: in your hands.**
+**See the whole picture of your ZCode sessions — then decide what stays.**
 
 </div>
 
-ZCode only offers "archiving" today: old sessions disappear from the list but remain in the
-database and on disk — invisible and undeletable. **ZCode Session Manager provides the missing
-half**: browse all historical sessions (including archived ones) and **truly delete** the ones
-you choose from the ZCode database and disk. Every deletion is backed up first, verified
-afterwards, and automatically restored if anything looks wrong.
+ZCode has since grown a native delete: the "Archived sessions" page can restore, delete
+individually, or permanently delete all archived sessions. **For everyday cleanup, the
+built-in feature is enough.** This tool is not its replacement — it is a standalone, decoupled
+session console for the parts the official UI does not show:
+
+- **Standalone & decoupled** — a small independent program that neither requires nor disturbs a
+  running ZCode; full freedom while ZCode is closed, automatic limited mode while it runs
+- **Structure made visible** — the desktop list shows root conversations only; here sub-agent
+  sessions sit in a parent/child tree, flagged archived / deleted / pinned / child / ghost,
+  with category filters, message counts and disk usage
+- **Know before you delete** — multi-select in bulk and preview the plan first: which sessions,
+  which tables, how many bytes on disk. Nothing happens until you confirm
+- **Reversible deletion** — automatic backup before, integrity check after, full auto-restore on failure
+- **Blind-spot cleanup** — "ghost" index entries (a record with no content left) are detected and removed
 
 <div align="center">
   <img src="docs/screenshot.en.png" alt="ZCode Session Manager main window (demo data)" width="880" />

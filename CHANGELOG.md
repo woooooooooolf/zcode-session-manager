@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file. 所有显著变更记录于此。
 The format is based on [Keep a Changelog](https://keepachangelog.com/); tags are `V`-prefixed (`V1.3.0`).
 
+## [Unreleased]
+<!-- zh -->
+### 变更
+- README（中/英）重新定位：ZCode 已在「已归档的会话」页内置删除乃至全部永久删除，旧的"官方只有归档"表述不再属实。新介绍如实说明官方能力，并阐述本工具的独立价值——独立解耦（不依赖运行中的 ZCode）、子会话树与状态细节（官方列表只显示根会话）、删除计划预览、备份/校验/自动恢复、残影条目清理。
+<!-- en -->
+### Changed
+- README (zh/en) repositioned: ZCode now ships native deletion on the "Archived sessions"
+  page, so the old "ZCode only offers archiving" pitch was no longer true. The new intro
+  states the built-in capability honestly and explains what this tool still uniquely
+  offers — standalone & decoupled (no running ZCode required), the sub-session tree with
+  status detail (the desktop list shows roots only), deletion plan preview,
+  backup/verify/auto-restore, and ghost-entry cleanup.
+
 ## [1.6.1] - 2026-11-13
 <!-- zh -->
 **基于 ZCode 3.18.2（桌面 3.18.2.10443 / 引擎 0.17.1 / 实测 2026-11-13）验证会话管理功能。** 本次 ZCode 启动时应用了 `0025_session_permanent_deletion` 迁移（ZCode 原生永久删除功能上线），数据库出现三张 zsm 未覆盖的会话关联表，已全部适配。
